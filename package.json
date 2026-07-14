@@ -1,8 +1,12 @@
 {
   "name": "@gorets/wildix-callcontrol",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Headless SIP-based EventEmitter for parallel call control against a Wildix PBX",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gorets/wildix-callcontrol.git"
+  },
   "publishConfig": {
     "access": "public"
   },
