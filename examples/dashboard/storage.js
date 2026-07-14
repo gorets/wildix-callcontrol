@@ -4,31 +4,33 @@ export function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { pbxAddress: '', webhookUrl: '', users: [] };
+      return { webhookUrl: '', users: [] };
     }
     const parsed = JSON.parse(raw);
     return {
-      pbxAddress: typeof parsed.pbxAddress === 'string' ? parsed.pbxAddress : '',
       webhookUrl: typeof parsed.webhookUrl === 'string' ? parsed.webhookUrl : '',
       users: Array.isArray(parsed.users)
-        ? parsed.users.filter((u) => u && typeof u.extension === 'string' && typeof u.sipPassword === 'string')
+        ? parsed.users.filter(
+            (u) =>
+              u &&
+              typeof u.pbxAddress === 'string' &&
+              typeof u.extension === 'string' &&
+              typeof u.sipPassword === 'string',
+          )
         : [],
     };
   } catch {
-    return { pbxAddress: '', webhookUrl: '', users: [] };
+    return { webhookUrl: '', users: [] };
   }
 }
 
 export function saveState(state) {
-  localStorage.setItem(
-    STORAGE_KEY,
-    JSON.stringify({ pbxAddress: state.pbxAddress, webhookUrl: state.webhookUrl, users: state.users }),
-  );
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ webhookUrl: state.webhookUrl, users: state.users }));
 }
 
-export function addUser(state, extension, sipPassword) {
+export function addUser(state, pbxAddress, extension, sipPassword) {
   const users = state.users.filter((u) => u.extension !== extension);
-  users.push({ extension, sipPassword });
+  users.push({ pbxAddress, extension, sipPassword });
   return { ...state, users };
 }
 

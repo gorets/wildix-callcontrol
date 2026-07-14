@@ -11,7 +11,6 @@ const sipPasswordInput = document.getElementById('sip-password-input');
 const addUserForm = document.getElementById('add-user-form');
 const sessionsContainer = document.getElementById('sessions');
 
-pbxAddressInput.value = state.pbxAddress;
 webhookUrlInput.value = state.webhookUrl;
 
 webhookUrlInput.addEventListener('input', () => {
@@ -36,9 +35,8 @@ function addSession(pbxAddress, extension, sipPassword, persist) {
     return;
   }
 
-  state.pbxAddress = pbxAddress;
   if (persist) {
-    Object.assign(state, addUser(state, extension, sipPassword));
+    Object.assign(state, addUser(state, pbxAddress, extension, sipPassword));
     saveState(state);
   }
 
@@ -71,5 +69,5 @@ addUserForm.addEventListener('submit', (event) => {
 
 // Restore every previously-added user immediately, without waiting for a click.
 for (const user of state.users) {
-  addSession(state.pbxAddress, user.extension, user.sipPassword, false);
+  addSession(user.pbxAddress, user.extension, user.sipPassword, false);
 }

@@ -9,7 +9,7 @@
   <body>
     <header class="page-header">
       <div class="page-header-content">
-        <h1>CallControl dashboard</h1>
+        <h1>Wildix CallControl dashboard</h1>
         <p>
           Multi-user demo of <code>@gorets/wildix-callcontrol</code> — receive live SIP events for any number of
           connected users, with the option to forward them to an HTTP endpoint.
@@ -20,12 +20,8 @@
       </div>
       <div class="page-header-actions">
         <section class="setup">
-          <label class="field">
-            PBX domain
-            <input id="pbx-address" placeholder="pbx.wildixin.com" form="add-user-form" required />
-          </label>
-
           <form id="add-user-form" class="add-user-form">
+            <input id="pbx-address" name="pbxAddress" placeholder="pbx.wildixin.com" required />
             <input id="extension-input" name="extension" placeholder="extension" required />
             <input id="sip-password-input" name="sipPassword" type="password" placeholder="sip password" required />
             <button type="submit">Add user</button>

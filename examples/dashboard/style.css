@@ -219,6 +219,15 @@ button:active {
   flex-shrink: 0;
 }
 
+.card-pbx-address {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status-message {
   margin: 0;
   font-size: 0.8rem;

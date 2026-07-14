@@ -94,6 +94,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
           <span class="card-title-text"></span>
           <span class="presence-icon">⚪</span>
         </h2>
+        <p class="card-pbx-address"></p>
         <p class="status-message" hidden></p>
       </div>
       <span class="status-badge status-connecting">connecting</span>
@@ -122,6 +123,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   `;
 
   card.querySelector('.card-title-text').textContent = extension;
+  card.querySelector('.card-pbx-address').textContent = pbxAddress;
 
   const statusBadge = card.querySelector('.status-badge');
   const errorBanner = card.querySelector('.error-banner');
