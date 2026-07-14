@@ -1,6 +1,6 @@
 {
   "name": "@gorets/wildix-callcontrol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Headless SIP-based EventEmitter for parallel call control against a Wildix PBX",
   "license": "MIT",
   "publishConfig": {
