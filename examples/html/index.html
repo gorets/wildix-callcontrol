@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>CallControl browser example</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "sip.js": "/node_modules/sip.js/lib/index.js",
+          "ltx": "/node_modules/ltx/src/ltx.js",
+          "events": "./event-emitter-shim.mjs",
+          "@gorets/wildix-callcontrol": "/dist/index.mjs"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <h1>CallControl browser example</h1>
+    <p>Open the browser console to see call, device, and presence events as they arrive.</p>
+    <form id="connect-form">
+      <input name="pbxAddress" placeholder="pbx address, e.g. pbx.wildixin.com" required size="40" />
+      <input name="extension" placeholder="extension" required />
+      <input name="sipPassword" placeholder="sip password" type="password" required />
+      <button type="submit">Connect</button>
+    </form>
+
+    <script type="module">
+      import { CallControl } from '@gorets/wildix-callcontrol';
+
+      document.getElementById('connect-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const formData = new FormData(event.target);
+
+        const callControl = new CallControl({
+          pbxAddress: formData.get('pbxAddress'),
+          extension: formData.get('extension'),
+          sipPassword: formData.get('sipPassword'),
+        });
+
+        callControl.on('registered', () => console.log('[callcontrol] registered'));
+        callControl.on('reconnecting', (info) => console.log('[callcontrol] reconnecting', info));
+        callControl.on('error', (error) => console.error('[callcontrol] error', error));
+        callControl.on('callStart', (call) => console.log('[callcontrol] callStart', call));
+        callControl.on('callUpdate', (call) => console.log('[callcontrol] callUpdate', call));
+        callControl.on('callEnd', (call) => console.log('[callcontrol] callEnd', call));
+        callControl.on('devicesChanged', (devices) => console.log('[callcontrol] devicesChanged', devices));
+        callControl.on('presenceChanged', (presence) => console.log('[callcontrol] presenceChanged', presence));
+        callControl.on('activeDeviceChanged', (activeDevice) => console.log('[callcontrol] activeDeviceChanged', activeDevice));
+
+        await callControl.connect();
+        console.log('Connected. Watching for call events.');
+      });
+    </script>
+  </body>
+</html>

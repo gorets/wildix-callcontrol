@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CallControl dashboard</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="page-header-content">
+        <h1>CallControl dashboard</h1>
+        <p>
+          Multi-user demo of <code>@gorets/wildix-callcontrol</code> — receive live SIP events for any number of
+          connected users, with the option to forward them to an HTTP endpoint.
+        </p>
+        <a class="repo-link" href="https://github.com/gorets/wildix-callcontrol" target="_blank" rel="noopener">
+          View source on GitHub ↗
+        </a>
+      </div>
+      <div class="page-header-actions">
+        <section class="setup">
+          <label class="field">
+            PBX domain
+            <input id="pbx-address" placeholder="pbx.wildixin.com" form="add-user-form" required />
+          </label>
+
+          <form id="add-user-form" class="add-user-form">
+            <input id="extension-input" name="extension" placeholder="extension" required />
+            <input id="sip-password-input" name="sipPassword" type="password" placeholder="sip password" required />
+            <button type="submit">Add user</button>
+          </form>
+        </section>
+
+        <section class="webhook-setup">
+          <label class="field">
+            Webhook URL for redirecting events
+            <input id="webhook-url" type="url" placeholder="https://webhook.site/#!/view/<id>" />
+          </label>
+        </section>
+      </div>
+    </header>
+
+    
+    <main id="sessions" class="sessions"></main>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

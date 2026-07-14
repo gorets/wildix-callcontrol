@@ -1,0 +1,465 @@
+:root {
+  color-scheme: light dark;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --bg: #f7f8fa;
+  --surface: #ffffff;
+  --text: #1a1d23;
+  --text-muted: #6b7280;
+  --border: rgb(15 23 42 / 8%);
+  --shadow: 0 1px 2px rgb(15 23 42 / 4%), 0 8px 24px -12px rgb(15 23 42 / 18%);
+  --radius: 14px;
+  --radius-sm: 8px;
+  --gap: 0.85rem;
+  --transition: 180ms ease;
+  --accent: #4f46e5;
+  --accent-soft: rgb(79 70 229 / 12%);
+  --green: #16a34a;
+  --green-soft: rgb(22 163 74 / 14%);
+  --amber: #d97706;
+  --amber-soft: rgb(217 119 6 / 14%);
+  --red: #dc2626;
+  --red-soft: rgb(220 38 38 / 14%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f1115;
+    --surface: #171a21;
+    --text: #e5e7eb;
+    --text-muted: #9aa1ac;
+    --border: rgb(255 255 255 / 8%);
+    --shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 12px 28px -14px rgb(0 0 0 / 60%);
+    --accent-soft: rgb(129 140 248 / 18%);
+    --green-soft: rgb(74 222 128 / 16%);
+    --amber-soft: rgb(251 191 36 / 16%);
+    --red-soft: rgb(248 113 113 / 16%);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 2rem clamp(1rem, 4vw, 3rem);
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+.page-header {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+}
+
+.page-header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.6rem;
+  letter-spacing: -0.01em;
+}
+
+.page-header p {
+  max-width: 60ch;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.page-header code {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.repo-link {
+  display: inline-block;
+  margin-top: 0.6rem;
+  font-size: 0.8rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.repo-link:hover {
+  text-decoration: underline;
+}
+
+.setup,
+.webhook-setup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--gap);
+  margin: 0.75rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+input,
+select {
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  transition:
+    border-color var(--transition),
+    box-shadow var(--transition);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.webhook-setup .field {
+  flex: 1;
+}
+
+.webhook-setup input {
+  width: 100%;
+}
+
+.add-user-form {
+  display: flex;
+  gap: var(--gap);
+}
+
+button {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.9rem;
+  cursor: pointer;
+  background: var(--accent);
+  color: white;
+  font-weight: 500;
+  transition:
+    transform var(--transition),
+    box-shadow var(--transition),
+    background var(--transition);
+}
+
+button:hover {
+  box-shadow: 0 4px 14px -4px var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+.sessions {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1.25rem;
+}
+
+.card {
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.card-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-header h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.presence-icon {
+  font-size: 0.7rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.status-message {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-badge {
+  border-radius: 999px;
+  padding: 0.2rem 0.7rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition:
+    background-color var(--transition),
+    color var(--transition);
+}
+
+.status-connecting,
+.status-reconnecting {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status-connected {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.status-error {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.remove-btn {
+  background: none;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.remove-btn:hover {
+  color: var(--red);
+  border-color: var(--red);
+  box-shadow: none;
+  transform: none;
+}
+
+.error-banner {
+  background: var(--red-soft);
+  color: var(--red);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+/* `display: flex` must not apply while [hidden] is set — otherwise it beats
+   the UA stylesheet's `[hidden] { display: none }` at equal specificity
+   (author styles win ties), and `errorBanner.hidden = true` stops working. */
+.error-banner:not([hidden]) {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.error-dismiss {
+  background: none;
+  color: inherit;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.error-dismiss:hover {
+  opacity: 1;
+  transform: none;
+  box-shadow: none;
+}
+
+.card > section,
+.card > form,
+.card > details {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.event-log-list {
+  max-height: 8rem;
+  overflow-y: auto;
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.call-row {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.call-info {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  font-weight: 600;
+}
+
+.call-state {
+  margin-left: auto;
+  font-weight: 500;
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+}
+
+.call-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.call-actions button {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.call-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: none;
+  transform: none;
+}
+
+.call-actions input,
+.call-actions select {
+  min-width: 0;
+  flex: 1 1 6rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+button:disabled,
+input:disabled,
+select:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.call-actions button:disabled:hover {
+  border-color: var(--border);
+  color: var(--text);
+  transform: none;
+  box-shadow: none;
+}
+
+.make-call-form {
+  display: flex;
+  gap: 2rem;
+  width: 100%;
+}
+
+.make-call-form .make-call-device {
+  flex: 1;
+  min-width: 0;
+}
+
+.make-call-form .make-call-destination-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.make-call-form .make-call-destination {
+  width: 8rem;
+}
+
+.devices h3 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.devices-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+}
+
+.card {
+  animation: card-in 220ms ease;
+}
+
+#webhook-url {
+  width: 100%;
+}
+
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 480px) {
+  .setup,
+  .webhook-setup,
+  .add-user-form {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .sessions {
+    grid-template-columns: 1fr;
+  }
+}
