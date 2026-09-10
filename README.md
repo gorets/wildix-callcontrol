@@ -18,6 +18,19 @@ await callControl.connect();
 await callControl.answer(call.id);
 ```
 
+## Online demo
+
+Try the multi-user browser dashboard live:
+
+**[→ Open the CallControl dashboard](https://gorets.github.io/wildix-callcontrol/)**
+
+Connect one or more extensions (each can be on a different PBX), watch live call / device / presence /
+routing events, and drive answer / hold / transfer / hangup from the page. Optionally forward every event to
+a webhook URL. Credentials stay in your browser's `localStorage` only — you'll need a reachable Wildix PBX
+and a SIP password to try it.
+
+To run the same UI locally: `npm run demo` (see [`examples/dashboard`](examples/dashboard)).
+
 ## Why this exists
 
 Wildix PBX call events are usually consumed via webhooks (`call_start` / `call_update` / `call_end`), which
