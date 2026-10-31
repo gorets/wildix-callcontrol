@@ -1,26 +1,67 @@
-name: Publish to npm
+name: Release
 
+# A push to main releases the version in package.json when it is not out yet: it is published to npm and
+# tagged, and a GitHub Release is created. Bump the version (`npm version <x.y.z> --no-git-tag-version`),
+# push, and that is all. A push that does not change the version releases nothing.
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  publish:
+  check:
+    name: Is a release due?
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.due.outputs.version }}
+      publish: ${{ steps.due.outputs.publish }}
+      release: ${{ steps.due.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: due
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          NAME=$(node -p "require('./package.json').name")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # Each half is decided on its own (a Release, not just a tag, is what counts), so a run that stopped between them can be run again.
+          if npm view "$NAME@$VERSION" version > /dev/null 2>&1; then PUBLISH=false; else PUBLISH=true; fi
+          if gh release view "v$VERSION" > /dev/null 2>&1; then RELEASE=false; else RELEASE=true; fi
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
+          echo "$NAME@$VERSION: publish to npm = $PUBLISH, create release v$VERSION = $RELEASE"
+
+  release:
+    name: Publish and release
+    needs: check
+    if: needs.check.outputs.publish == 'true' || needs.check.outputs.release == 'true'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      id-token: write
+      contents: write # the tag and the GitHub Release
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
       - run: npm run lint
       - run: npm run build
-      - run: npm publish --access public --provenance
+      # npm first: a failed publish must not leave a tag behind.
+      - name: Publish to npm
+        if: needs.check.outputs.publish == 'true'
+        run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create the tag and the GitHub Release
+        if: needs.check.outputs.release == 'true'
+        run: gh release create "v${{ needs.check.outputs.version }}" --target "$GITHUB_SHA" --title "${{ needs.check.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
