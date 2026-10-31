@@ -56,11 +56,28 @@ function getPresenceStatus(status) {
   return KNOWN_PRESENCE_STATUSES.has(status) ? status : 'offline';
 }
 
-function renderPresenceIcon(element, status) {
-  element.dataset.status = getPresenceStatus(status);
-  element.replaceChildren(iconElement(Icons.presence, { fill: 'currentColor' }));
-  element.title = status ?? 'unknown';
+const PRESENCE_LABEL = {
+  online: 'Available',
+  away: 'Away',
+  dnd: 'Do not disturb',
+  offline: 'Offline',
+  'only-sip': 'SIP only',
+};
+
+function renderPresenceDot(element, status) {
+  const known = getPresenceStatus(status);
+  const label = KNOWN_PRESENCE_STATUSES.has(status) ? PRESENCE_LABEL[known] : (status ?? 'Unknown');
+  element.dataset.status = known;
+  element.title = `Presence: ${label}`;
+  element.setAttribute('aria-label', element.title);
 }
+
+// The three secondary call tools, each revealed as an inline panel by its own button.
+const CALL_TOOLS = [
+  { id: 'dtmf', label: 'DTMF', icon: Icons.dtmf, capability: 'dtmf' },
+  { id: 'transfer', label: 'Transfer', icon: Icons.transfer, capability: 'transfer' },
+  { id: 'attended', label: 'Attended', icon: Icons.attendedTransfer, capability: 'attendedTransfer' },
+];
 
 function getCallCapabilities(call) {
   if (call.state === 'ringing') {
@@ -75,7 +92,23 @@ function getCallCapabilities(call) {
   return NO_CAPABILITIES;
 }
 
-export function createUserSession({ pbxAddress, extension, sipPassword, getWebhookUrl, onRemove }) {
+const MAX_LOG_ENTRIES = 200;
+
+function formatLogTime(date) {
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+}
+
+/** mm:ss, or h:mm:ss past an hour — used by the call timers (main.js ticks them every second). */
+export function formatDuration(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const mmss = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return hours > 0 ? `${hours}:${mmss}` : mmss;
+}
+
+export function createUserSession({ pbxAddress, extension, sipPassword, getWebhookUrl, onRemove, onChange }) {
   const callControl = new CallControl({
     pbxAddress,
     extension,
@@ -86,70 +119,113 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   let calls = [];
   let devices = [];
   let presence;
+  let status = 'connecting';
+  let eventCount = 0;
+
+  // The call rows are rebuilt on every call/device update, so the UI state a
+  // person is in the middle of (which tool panel is open, what they've typed)
+  // lives here, keyed by call id, instead of in the DOM.
+  const callStartedAt = new Map(); // callId -> ms timestamp the dashboard first saw the call
+  const openTool = new Map(); // callId -> 'dtmf' | 'transfer' | 'attended'
+  const drafts = new Map(); // `${callId}:${toolId}` -> input value
+  let focusToolInputFor; // callId whose tool input should take focus after the next render
 
   const card = document.createElement('article');
   card.className = 'card';
+  card.dataset.extension = extension;
   card.innerHTML = `
     <header class="card-header">
       <div class="card-title-group">
         <h2 class="card-title">
           <span class="card-title-text"></span>
-          <span class="presence-icon"></span>
+          <span class="presence-dot" role="img"></span>
         </h2>
         <p class="card-pbx-address"></p>
         <p class="status-message" hidden></p>
       </div>
-      <span class="status-badge status-connecting">connecting</span>
-      <button class="remove-btn" type="button">Remove</button>
+      <div class="card-header-actions">
+        <span class="status-badge status-connecting">connecting</span>
+        <button class="remove-btn" type="button">${iconMarkup(Icons.remove)}</button>
+      </div>
     </header>
-    <div class="error-banner" hidden>
+    <div class="error-banner" role="alert" hidden>
       <span class="error-message"></span>
       <button class="error-dismiss" type="button" aria-label="Dismiss">${iconMarkup(Icons.dismiss)}</button>
     </div>
-    <section class="calls"></section>
-    <form class="make-call-form">
-      <select class="make-call-device"><option value="">(any device)</option></select>
-      <div class="make-call-destination-group">
-        <input class="make-call-destination" placeholder="destination" required />
-        <button type="submit">Call</button>
-      </div>
-    </form>
-    <section class="devices">
-      <h3>Devices</h3>
-      <ul class="devices-list"></ul>
-    </section>
+    <div class="card-body">
+      <section class="calls" aria-label="Calls"></section>
+      <section class="make-call">
+        <span class="section-label">New call</span>
+        <form class="make-call-form">
+          <select class="make-call-device" aria-label="Call from device"></select>
+          <input class="make-call-destination" type="tel" aria-label="Destination" placeholder="Destination" required />
+          <button type="submit">${iconMarkup(Icons.phone)}Call</button>
+        </form>
+      </section>
+      <section class="devices">
+        <h3 class="section-label">Devices · <span class="devices-count">0</span></h3>
+        <ul class="devices-list"></ul>
+      </section>
+    </div>
     <details class="event-log">
-      <summary>Event log</summary>
+      <summary>${iconMarkup(Icons.chevron)}Event log<span class="event-count">0</span></summary>
       <ul class="event-log-list"></ul>
     </details>
   `;
 
   card.querySelector('.card-title-text').textContent = extension;
   card.querySelector('.card-pbx-address').textContent = pbxAddress;
+  card.querySelector('.card-pbx-address').title = pbxAddress;
 
   const statusBadge = card.querySelector('.status-badge');
   const errorBanner = card.querySelector('.error-banner');
   const errorMessage = card.querySelector('.error-message');
   const eventLogList = card.querySelector('.event-log-list');
+  const eventCountElement = card.querySelector('.event-count');
   const removeBtn = card.querySelector('.remove-btn');
   const callsSection = card.querySelector('.calls');
   const makeCallForm = card.querySelector('.make-call-form');
   const makeCallDestination = card.querySelector('.make-call-destination');
   const makeCallDeviceSelect = card.querySelector('.make-call-device');
   const makeCallSubmitBtn = card.querySelector('.make-call-form button[type="submit"]');
-  const presenceIcon = card.querySelector('.presence-icon');
-  renderPresenceIcon(presenceIcon, undefined);
+  const presenceDot = card.querySelector('.presence-dot');
   const statusMessage = card.querySelector('.status-message');
   const devicesList = card.querySelector('.devices-list');
+  const devicesCount = card.querySelector('.devices-count');
+
+  removeBtn.setAttribute('aria-label', `Remove user ${extension}`);
+  removeBtn.title = 'Remove user';
+  renderPresenceDot(presenceDot, undefined);
 
   card.querySelector('.error-dismiss').addEventListener('click', () => {
     errorBanner.hidden = true;
   });
 
-  function logEvent(text) {
+  function notifyChange() {
+    onChange?.();
+  }
+
+  function logEvent(name, detail = '', isError = false) {
     const item = document.createElement('li');
-    item.textContent = `${new Date().toLocaleTimeString()} — ${text}`;
+    if (isError) {
+      item.className = 'is-error';
+    }
+    const time = document.createElement('span');
+    time.className = 'log-time';
+    time.textContent = formatLogTime(new Date());
+    const event = document.createElement('span');
+    event.className = 'log-event';
+    event.textContent = name;
+    const text = document.createElement('span');
+    text.className = 'log-detail';
+    text.textContent = detail;
+    item.append(time, '  ', event, '  ', text);
     eventLogList.prepend(item);
+    while (eventLogList.children.length > MAX_LOG_ENTRIES) {
+      eventLogList.lastElementChild.remove();
+    }
+    eventCount += 1;
+    eventCountElement.textContent = String(eventCount);
   }
 
   function forwardEvent(eventName, data) {
@@ -160,7 +236,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     postWebhookEvent(url, { event: eventName, extension, pbxAddress, timestamp: new Date().toISOString(), data }).then(
       (result) => {
         if (!result.ok) {
-          logEvent(`webhook delivery failed: ${eventName} (${result.reason})`);
+          logEvent('webhook', `delivery failed: ${eventName} (${result.reason})`, true);
         }
       },
     );
@@ -171,13 +247,18 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     errorBanner.hidden = false;
   }
 
-  function setStatus(status) {
-    statusBadge.textContent = status;
-    statusBadge.className = `status-badge status-${status}`;
+  function setStatus(nextStatus) {
+    status = nextStatus;
+    statusBadge.textContent = nextStatus;
+    statusBadge.className = `status-badge status-${nextStatus}`;
+    notifyChange();
   }
 
   function runAction(promise) {
-    promise.catch((error) => showError(error.message));
+    return promise.catch((error) => {
+      showError(error.message);
+      throw error;
+    });
   }
 
   function findDefaultDeviceUri() {
@@ -198,45 +279,218 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     return devices.filter((device) => !device.isLocalRegistration);
   }
 
+  function setCalls(nextCalls) {
+    calls = nextCalls;
+    const activeIds = new Set(calls.map((call) => call.id));
+    for (const map of [callStartedAt, openTool]) {
+      for (const id of map.keys()) {
+        if (!activeIds.has(id)) {
+          map.delete(id);
+        }
+      }
+    }
+    for (const key of drafts.keys()) {
+      if (!activeIds.has(key.slice(0, key.lastIndexOf(':')))) {
+        drafts.delete(key);
+      }
+    }
+    card.classList.toggle('is-in-call', calls.length > 0);
+    renderCalls();
+    notifyChange();
+  }
+
+  function renderNoCalls() {
+    const hint = document.createElement('div');
+    hint.className = 'no-calls';
+    const text = document.createElement('span');
+    text.textContent =
+      getCallableDevices().length > 0
+        ? 'No active calls'
+        : 'No active calls · sign in on a softphone or x-bees to place calls';
+    hint.append(iconElement(Icons.phone), text);
+    callsSection.replaceChildren(hint);
+  }
+
+  /** The inline form behind one of the DTMF / Transfer / Attended buttons. */
+  function buildToolPanel(call, toolId, otherCalls, panelId) {
+    const panel = document.createElement('form');
+    panel.className = 'call-panel call-form-row';
+    panel.id = panelId;
+    const inputId = `${panelId}-input`;
+
+    const label = document.createElement('label');
+    label.htmlFor = inputId;
+    const submit = document.createElement('button');
+    submit.type = 'submit';
+    let field;
+
+    if (toolId === 'attended') {
+      label.textContent = 'Connect to';
+      field = document.createElement('select');
+      for (const otherCall of otherCalls) {
+        const option = document.createElement('option');
+        option.value = otherCall.id;
+        option.textContent = otherCall.remoteName ?? otherCall.remoteNumber ?? otherCall.id;
+        field.appendChild(option);
+      }
+      submit.textContent = 'Connect';
+    } else {
+      label.textContent = toolId === 'dtmf' ? 'Digits' : 'Transfer to';
+      field = document.createElement('input');
+      field.type = 'text';
+      field.autocomplete = 'off';
+      field.placeholder = toolId === 'dtmf' ? 'e.g. 1#' : 'Extension or number';
+      if (toolId === 'dtmf') {
+        field.inputMode = 'tel';
+      }
+      field.value = drafts.get(`${call.id}:${toolId}`) ?? '';
+      field.addEventListener('input', () => {
+        drafts.set(`${call.id}:${toolId}`, field.value);
+      });
+      submit.textContent = toolId === 'dtmf' ? 'Send' : 'Transfer';
+    }
+    field.id = inputId;
+    field.className = 'call-panel-input';
+    field.dataset.callId = call.id;
+
+    panel.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        openTool.delete(call.id);
+        renderCalls();
+        callsSection.querySelector(`[data-call-id="${CSS.escape(call.id)}"] [data-tool="${toolId}"]`)?.focus();
+      }
+    });
+
+    panel.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const value = field.value.trim();
+      if (!value) {
+        return;
+      }
+      if (toolId === 'dtmf') {
+        runAction(callControl.sendDTMF(call.id, value)).then(
+          () => {
+            drafts.delete(`${call.id}:dtmf`);
+            field.value = '';
+          },
+          () => undefined,
+        );
+      } else if (toolId === 'transfer') {
+        runAction(callControl.transfer(call.id, value)).then(
+          () => {
+            drafts.delete(`${call.id}:transfer`);
+            openTool.delete(call.id);
+            renderCalls();
+          },
+          () => undefined,
+        );
+      } else {
+        runAction(callControl.attendedTransfer(call.id, value)).catch(() => undefined);
+      }
+    });
+
+    panel.append(label, field, submit);
+    return panel;
+  }
+
   function renderCalls() {
-    callsSection.innerHTML = '';
+    const focused = document.activeElement;
+    const refocusCallId =
+      focusToolInputFor ??
+      (focused?.classList?.contains('call-panel-input') && callsSection.contains(focused)
+        ? focused.dataset.callId
+        : undefined);
+    focusToolInputFor = undefined;
+
+    if (calls.length === 0) {
+      renderNoCalls();
+      return;
+    }
+
+    callsSection.replaceChildren();
     for (const call of calls) {
+      if (!callStartedAt.has(call.id)) {
+        callStartedAt.set(call.id, Date.now());
+      }
       const otherCalls = calls.filter((c) => c.id !== call.id);
+      const capabilities = getCallCapabilities(call);
+      const toolEnabled = {
+        dtmf: capabilities.dtmf,
+        transfer: capabilities.transfer,
+        attended: capabilities.attendedTransfer && otherCalls.length > 0,
+      };
+      // A panel whose action is no longer possible (e.g. DTMF after Hold) closes itself.
+      if (openTool.has(call.id) && !toolEnabled[openTool.get(call.id)]) {
+        openTool.delete(call.id);
+      }
+      const activeTool = openTool.get(call.id);
+      const panelId = `call-panel-${extension}-${call.id}`.replace(/[^A-Za-z0-9_-]/g, '-');
+
       const row = document.createElement('div');
       row.className = 'call-row';
+      row.dataset.callId = call.id;
       row.innerHTML = `
         <div class="call-info">
-          <span class="call-direction"></span>
-          <span class="call-name"></span>
-          <span class="call-number"></span>
-          <span class="call-state"></span>
+          <span class="call-direction" role="img"></span>
+          <div class="call-who">
+            <span class="call-name"></span>
+            <span class="call-meta"></span>
+          </div>
+          <div class="call-status">
+            <span class="call-state"></span>
+            <span class="call-timer"></span>
+          </div>
         </div>
-        <div class="call-actions">
+        <div class="call-form-row is-wide answer-on" hidden>
+          <label>Answer on</label>
           <select class="answer-device"><option value="">(any device)</option></select>
+        </div>
+        <div class="call-buttons">
           <button data-action="answer" type="button">${iconMarkup(Icons.answer)}Answer</button>
           <button data-action="hold" type="button">${iconMarkup(Icons.hold)}Hold</button>
           <button data-action="resume" type="button">${iconMarkup(Icons.resume)}Resume</button>
-          <button data-action="hangup" type="button">${iconMarkup(Icons.hangup)}Hangup</button>
-          <input class="dtmf-input" placeholder="digits" size="4" />
-          <button data-action="dtmf" type="button">${iconMarkup(Icons.dtmf)}DTMF</button>
-          <input class="transfer-destination" placeholder="transfer to" />
-          <button data-action="transfer" type="button">${iconMarkup(Icons.transfer)}Transfer</button>
-          <select class="attended-transfer-target"><option value="">(pick call)</option></select>
-          <button data-action="attended-transfer" type="button">${iconMarkup(Icons.attendedTransfer)}Attended transfer</button>
+          <button data-action="hangup" type="button">${iconMarkup(Icons.hangup)}Hang up</button>
+        </div>
+        <div class="call-tools" role="group" aria-label="More call actions">
+          ${CALL_TOOLS.map(
+            (tool) =>
+              `<button type="button" data-tool="${tool.id}" aria-controls="${panelId}">${iconMarkup(tool.icon)}${tool.label}</button>`,
+          ).join('')}
         </div>
       `;
 
-      const directionElement = row.querySelector('.call-direction');
       const isInbound = call.direction === 'inbound';
+      const directionElement = row.querySelector('.call-direction');
       directionElement.replaceChildren(iconElement(isInbound ? Icons.inbound : Icons.outbound));
+      directionElement.dataset.direction = isInbound ? 'inbound' : 'outbound';
       directionElement.title = isInbound ? 'Incoming' : 'Outgoing';
-      directionElement.setAttribute('role', 'img');
       directionElement.setAttribute('aria-label', directionElement.title);
-      row.querySelector('.call-name').textContent = call.remoteName ?? '';
-      row.querySelector('.call-number').textContent = call.remoteNumber ?? '';
-      row.querySelector('.call-state').textContent = `[${CALL_STATE_LABEL[call.state] ?? call.state}]`;
 
+      const name = call.remoteName || call.remoteNumber || 'Unknown caller';
+      row.querySelector('.call-name').textContent = name;
+      const meta = row.querySelector('.call-meta');
+      meta.append(isInbound ? 'Incoming' : 'Outgoing');
+      if (call.remoteName && call.remoteNumber) {
+        const number = document.createElement('span');
+        number.className = 'call-number';
+        number.textContent = call.remoteNumber;
+        meta.append(' · ', number);
+      }
+
+      const stateElement = row.querySelector('.call-state');
+      stateElement.textContent = CALL_STATE_LABEL[call.state] ?? call.state;
+      stateElement.dataset.state = call.state;
+
+      const timer = row.querySelector('.call-timer');
+      timer.dataset.started = String(callStartedAt.get(call.id));
+      timer.textContent = formatDuration(Date.now() - callStartedAt.get(call.id));
+
+      const answerOn = row.querySelector('.answer-on');
       const deviceSelect = row.querySelector('.answer-device');
+      const answerSelectId = `${panelId}-answer`;
+      deviceSelect.id = answerSelectId;
+      answerOn.querySelector('label').htmlFor = answerSelectId;
       for (const device of devices) {
         const option = document.createElement('option');
         option.value = device.uri;
@@ -244,84 +498,95 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
         deviceSelect.appendChild(option);
       }
       deviceSelect.value = findDefaultDeviceUri();
+      // Only a ringing inbound call can be answered, so the device picker only shows then.
+      answerOn.hidden = !capabilities.answer;
 
-      const otherCallSelect = row.querySelector('.attended-transfer-target');
-      for (const otherCall of otherCalls) {
-        const option = document.createElement('option');
-        option.value = otherCall.id;
-        option.textContent = otherCall.remoteName ?? otherCall.remoteNumber ?? otherCall.id;
-        otherCallSelect.appendChild(option);
+      for (const action of ['answer', 'hold', 'resume', 'hangup']) {
+        row.querySelector(`[data-action="${action}"]`).disabled = !capabilities[action];
       }
 
-      const capabilities = getCallCapabilities(call);
-      const attendedTransferEnabled = capabilities.attendedTransfer && otherCalls.length > 0;
-
-      deviceSelect.disabled = !capabilities.answer;
-      row.querySelector('[data-action="answer"]').disabled = !capabilities.answer;
-      row.querySelector('[data-action="hold"]').disabled = !capabilities.hold;
-      row.querySelector('[data-action="resume"]').disabled = !capabilities.resume;
-      row.querySelector('[data-action="hangup"]').disabled = !capabilities.hangup;
-      row.querySelector('.dtmf-input').disabled = !capabilities.dtmf;
-      row.querySelector('[data-action="dtmf"]').disabled = !capabilities.dtmf;
-      row.querySelector('.transfer-destination').disabled = !capabilities.transfer;
-      row.querySelector('[data-action="transfer"]').disabled = !capabilities.transfer;
-      otherCallSelect.disabled = !attendedTransferEnabled;
-      row.querySelector('[data-action="attended-transfer"]').disabled = !attendedTransferEnabled;
-
       row.querySelector('[data-action="answer"]').addEventListener('click', () => {
-        runAction(callControl.answer(call.id, deviceSelect.value || undefined));
+        runAction(callControl.answer(call.id, deviceSelect.value || undefined)).catch(() => undefined);
       });
       row.querySelector('[data-action="hold"]').addEventListener('click', () => {
-        runAction(callControl.hold(call.id));
+        runAction(callControl.hold(call.id)).catch(() => undefined);
       });
       row.querySelector('[data-action="resume"]').addEventListener('click', () => {
-        runAction(callControl.resume(call.id));
+        runAction(callControl.resume(call.id)).catch(() => undefined);
       });
       row.querySelector('[data-action="hangup"]').addEventListener('click', () => {
-        runAction(callControl.hangup(call.id));
-      });
-      row.querySelector('[data-action="dtmf"]').addEventListener('click', () => {
-        const digits = row.querySelector('.dtmf-input').value.trim();
-        if (digits) {
-          runAction(callControl.sendDTMF(call.id, digits));
-        }
-      });
-      row.querySelector('[data-action="transfer"]').addEventListener('click', () => {
-        const destination = row.querySelector('.transfer-destination').value.trim();
-        if (destination) {
-          runAction(callControl.transfer(call.id, destination));
-        }
-      });
-      row.querySelector('[data-action="attended-transfer"]').addEventListener('click', () => {
-        if (otherCallSelect.value) {
-          runAction(callControl.attendedTransfer(call.id, otherCallSelect.value));
-        }
+        runAction(callControl.hangup(call.id)).catch(() => undefined);
       });
 
+      for (const tool of CALL_TOOLS) {
+        const button = row.querySelector(`[data-tool="${tool.id}"]`);
+        button.disabled = !toolEnabled[tool.id];
+        button.setAttribute('aria-expanded', String(activeTool === tool.id));
+        if (tool.id === 'attended') {
+          button.title = otherCalls.length > 0 ? 'Attended transfer' : 'Attended transfer needs a second call';
+        }
+        button.addEventListener('click', () => {
+          if (openTool.get(call.id) === tool.id) {
+            openTool.delete(call.id);
+          } else {
+            openTool.set(call.id, tool.id);
+            focusToolInputFor = call.id;
+          }
+          renderCalls();
+        });
+      }
+
+      if (activeTool) {
+        row.append(buildToolPanel(call, activeTool, otherCalls, panelId));
+      }
+
       callsSection.appendChild(row);
+    }
+
+    if (refocusCallId) {
+      callsSection.querySelector(`.call-panel-input[data-call-id="${CSS.escape(refocusCallId)}"]`)?.focus();
     }
   }
 
   function renderPresence() {
-    renderPresenceIcon(presenceIcon, presence?.status);
+    renderPresenceDot(presenceDot, presence?.status);
     statusMessage.textContent = presence?.message ?? '';
     statusMessage.hidden = !presence?.message;
   }
 
   function renderDevices() {
-    devicesList.innerHTML = '';
+    devicesList.replaceChildren();
+    devicesCount.textContent = String(devices.length);
     for (const device of devices) {
       const item = document.createElement('li');
-      item.textContent = `${getDeviceDisplayName(device)}${device.isLocalRegistration ? ' (this session)' : ''}`;
+      item.className = 'device-chip';
+      const name = document.createElement('span');
+      name.className = 'device-name';
+      name.textContent = getDeviceDisplayName(device);
+      name.title = device.userAgent || name.textContent;
+      item.append(iconElement(device.isLocalRegistration ? Icons.localDevice : Icons.device), name);
+      if (device.isLocalRegistration) {
+        const tag = document.createElement('span');
+        tag.className = 'device-tag';
+        tag.textContent = 'this session';
+        item.append(tag);
+      }
       devicesList.appendChild(item);
     }
   }
 
   function renderMakeCallDeviceOptions() {
     const callableDevices = getCallableDevices();
+    // "(any device)" only means something when there's at least one real
+    // device for the PBX to ring — with none, calling isn't possible at all.
+    const canCall = callableDevices.length > 0;
 
     const previousValue = makeCallDeviceSelect.value;
-    makeCallDeviceSelect.innerHTML = '<option value="">(any device)</option>';
+    makeCallDeviceSelect.replaceChildren();
+    const anyOption = document.createElement('option');
+    anyOption.value = '';
+    anyOption.textContent = canCall ? '(any device)' : 'No devices';
+    makeCallDeviceSelect.appendChild(anyOption);
     for (const device of callableDevices) {
       const option = document.createElement('option');
       option.value = device.uri;
@@ -334,19 +599,17 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       makeCallDeviceSelect.value = findDefaultDeviceUri();
     }
 
-    // "(any device)" only means something when there's at least one real
-    // device for the PBX to ring — with none, calling isn't possible at all.
-    const canCall = callableDevices.length > 0;
     makeCallDestination.disabled = !canCall;
     makeCallDeviceSelect.disabled = !canCall;
     makeCallSubmitBtn.disabled = !canCall;
-    makeCallDestination.placeholder = canCall ? 'destination' : 'no devices to call through';
   }
 
   // Starts the make-call form disabled (devices is still empty at this
   // point) instead of leaving it enabled with a meaningless "(any device)"
   // until the first devicesChanged notification arrives.
   renderMakeCallDeviceOptions();
+  renderDevices();
+  renderNoCalls();
 
   callControl.on('registered', () => {
     setStatus('connected');
@@ -355,31 +618,28 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   });
   callControl.on('reconnecting', (info) => {
     setStatus('reconnecting');
-    logEvent(`reconnecting (attempt ${info.attempt})`);
+    logEvent('reconnecting', `attempt ${info.attempt}`);
     forwardEvent('reconnecting', info);
   });
   callControl.on('error', (error) => {
     showError(error.message);
-    logEvent(`error: ${error.message}`);
+    logEvent('error', error.message, true);
     forwardEvent('error', { message: error.message });
   });
 
   callControl.on('callStart', (call) => {
-    calls = callControl.getActiveCalls();
-    renderCalls();
-    logEvent(`callStart ${call.id}`);
+    setCalls(callControl.getActiveCalls());
+    logEvent('callStart', call.id);
     forwardEvent('callStart', call);
   });
   callControl.on('callUpdate', (call) => {
-    calls = callControl.getActiveCalls();
-    renderCalls();
-    logEvent(`callUpdate ${call.id} → ${call.state}`);
+    setCalls(callControl.getActiveCalls());
+    logEvent('callUpdate', `${call.id} → ${call.state}`);
     forwardEvent('callUpdate', call);
   });
   callControl.on('callEnd', (call) => {
-    calls = callControl.getActiveCalls();
-    renderCalls();
-    logEvent(`callEnd ${call.id}`);
+    setCalls(callControl.getActiveCalls());
+    logEvent('callEnd', call.id);
     forwardEvent('callEnd', call);
   });
 
@@ -388,17 +648,17 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     renderDevices();
     renderCalls();
     renderMakeCallDeviceOptions();
-    logEvent('devicesChanged');
+    logEvent('devicesChanged', `${nextDevices.length} device${nextDevices.length === 1 ? '' : 's'}`);
     forwardEvent('devicesChanged', nextDevices);
   });
   callControl.on('presenceChanged', (nextPresence) => {
     presence = nextPresence;
     renderPresence();
-    logEvent(`presenceChanged → ${nextPresence.status}`);
+    logEvent('presenceChanged', nextPresence.status ?? '');
     forwardEvent('presenceChanged', nextPresence);
   });
   callControl.on('activeDeviceChanged', (nextActiveDevice) => {
-    logEvent(`activeDeviceChanged → ${nextActiveDevice.type}`);
+    logEvent('activeDeviceChanged', nextActiveDevice.type);
     forwardEvent('activeDeviceChanged', nextActiveDevice);
   });
 
@@ -408,7 +668,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     if (!destination) {
       return;
     }
-    runAction(callControl.makeCall(destination, makeCallDeviceSelect.value || undefined));
+    runAction(callControl.makeCall(destination, makeCallDeviceSelect.value || undefined)).catch(() => undefined);
     makeCallDestination.value = '';
   });
 
@@ -419,6 +679,9 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   return {
     card,
     callControl,
+    extension,
+    getStatus: () => status,
+    getCallCount: () => calls.length,
     connect: () =>
       callControl.connect().catch((error) => {
         setStatus('error');

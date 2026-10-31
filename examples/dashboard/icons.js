@@ -1,16 +1,22 @@
 import {
-  ArrowDownLeft,
+  ArrowDownRight,
   ArrowUpRight,
-  Circle,
+  ChevronRight,
   createElement,
   ExternalLink,
   Handshake,
   Hash,
+  Link,
+  Monitor,
+  MonitorSmartphone,
   Pause,
   Phone,
   PhoneForwarded,
   PhoneOff,
   Play,
+  Plus,
+  Search,
+  Trash2,
   X,
 } from 'lucide';
 
@@ -31,6 +37,7 @@ export function iconMarkup(iconNode, attributes) {
 
 export const Icons = {
   answer: Phone,
+  phone: Phone,
   hold: Pause,
   resume: Play,
   hangup: PhoneOff,
@@ -38,8 +45,24 @@ export const Icons = {
   transfer: PhoneForwarded,
   attendedTransfer: Handshake,
   dismiss: X,
-  inbound: ArrowDownLeft,
+  inbound: ArrowDownRight,
   outbound: ArrowUpRight,
   externalLink: ExternalLink,
-  presence: Circle,
+  plus: Plus,
+  link: Link,
+  search: Search,
+  remove: Trash2,
+  chevron: ChevronRight,
+  localDevice: Monitor,
+  device: MonitorSmartphone,
 };
+
+/** Replaces every static `<span data-icon="name">` placeholder in the page with its icon. */
+export function hydrateIcons(root = document) {
+  for (const placeholder of root.querySelectorAll('[data-icon]')) {
+    const iconNode = Icons[placeholder.dataset.icon];
+    if (iconNode) {
+      placeholder.replaceChildren(iconElement(iconNode));
+    }
+  }
+}

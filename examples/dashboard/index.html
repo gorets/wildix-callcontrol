@@ -3,42 +3,96 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CallControl dashboard</title>
+    <title>Wildix CallControl dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    />
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <header class="page-header">
-      <div class="page-header-content">
-        <h1>Wildix CallControl dashboard</h1>
-        <p>
-          Multi-user demo of <code>@gorets/wildix-callcontrol</code> — receive live SIP events for any number of
-          connected users, with the option to forward them to an HTTP endpoint.
-        </p>
-        <a class="repo-link" href="https://github.com/gorets/wildix-callcontrol" target="_blank" rel="noopener">
-          View source on GitHub
-        </a>
-      </div>
-      <div class="page-header-actions">
-        <section class="setup">
-          <form id="add-user-form" class="add-user-form">
-            <input id="pbx-address" name="pbxAddress" placeholder="pbx.wildixin.com" required />
-            <input id="extension-input" name="extension" placeholder="extension" required />
-            <input id="sip-password-input" name="sipPassword" type="password" placeholder="sip password" required />
-            <button type="submit">Add user</button>
-          </form>
-        </section>
-
-        <section class="webhook-setup">
-          <label class="field">
-            Webhook URL for redirecting events
-            <input id="webhook-url" type="url" placeholder="https://webhook.site/#!/view/<id>" />
-          </label>
-        </section>
+    <header class="topbar">
+      <div class="container topbar-inner">
+        <div class="brand">
+          <span class="brand-mark" data-icon="phone"></span>
+          <span class="brand-name">Wildix CallControl</span>
+          <span class="chip">Demo</span>
+        </div>
+        <div class="topbar-actions">
+          <code class="install-cmd">npm i @gorets/wildix-callcontrol</code>
+          <a class="btn btn-secondary repo-link" href="https://github.com/gorets/wildix-callcontrol" target="_blank" rel="noopener">
+            Source on GitHub
+          </a>
+        </div>
       </div>
     </header>
 
-    
-    <main id="sessions" class="sessions"></main>
+    <main class="container page">
+      <section class="hero">
+        <div class="hero-intro">
+          <h1>CallControl dashboard</h1>
+          <p>
+            Live SIP events for any number of users with <code>@gorets/wildix-callcontrol</code>, optionally forwarded
+            to an HTTP endpoint.
+          </p>
+        </div>
+
+        <div class="webhook-setup">
+          <div class="webhook-head">
+            <label for="webhook-url"><span data-icon="link"></span>Forward events to webhook <span class="optional">— optional</span></label>
+            <span id="webhook-status" class="pill pill-neutral">Not forwarding</span>
+          </div>
+          <input id="webhook-url" class="mono" type="url" placeholder="https://webhook.site/#!/view/<id>" />
+        </div>
+      </section>
+
+      <section class="users">
+        <div class="users-toolbar">
+          <h2>Users</h2>
+          <div class="users-controls">
+            <fieldset class="segmented">
+              <legend class="visually-hidden">Filter users</legend>
+              <button type="button" data-filter="all" aria-pressed="true">All <span id="count-all">0</span></button>
+              <button type="button" data-filter="in-call" aria-pressed="false">In call <span id="count-in-call">0</span></button>
+              <button type="button" data-filter="idle" aria-pressed="false">Idle <span id="count-idle">0</span></button>
+            </fieldset>
+            <div class="search">
+              <span data-icon="search"></span>
+              <label for="user-search" class="visually-hidden">Find extension</label>
+              <input id="user-search" type="search" placeholder="Find extension" autocomplete="off" />
+            </div>
+            <button id="add-user-toggle" class="btn btn-primary btn-compact" type="button" aria-expanded="false" aria-controls="add-user-form">
+              <span data-icon="plus"></span>Add user
+            </button>
+          </div>
+        </div>
+
+        <form id="add-user-form" class="panel add-user-form" hidden>
+          <div class="field field-host">
+            <label for="pbx-address">PBX host</label>
+            <input id="pbx-address" name="pbxAddress" placeholder="pbx.wildixin.com" autocomplete="off" required />
+          </div>
+          <div class="field field-ext">
+            <label for="extension-input">Extension</label>
+            <input id="extension-input" class="mono" name="extension" placeholder="10090" autocomplete="off" required />
+          </div>
+          <div class="field field-pass">
+            <label for="sip-password-input">SIP password</label>
+            <input id="sip-password-input" name="sipPassword" type="password" placeholder="••••••••" autocomplete="off" required />
+          </div>
+          <div class="add-user-actions">
+            <button class="btn btn-primary btn-compact" type="submit">Connect</button>
+            <button id="add-user-cancel" class="btn btn-secondary btn-compact" type="button">Cancel</button>
+          </div>
+          <p class="hint add-user-hint">Credentials are saved in this browser's localStorage.</p>
+        </form>
+
+        <div id="sessions" class="sessions"></div>
+        <p id="sessions-empty" class="empty-state" hidden></p>
+      </section>
+    </main>
 
     <script type="module" src="./main.js"></script>
   </body>
