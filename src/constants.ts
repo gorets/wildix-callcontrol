@@ -6,6 +6,9 @@ export const TAPI_EVENT_PACKAGE = 'wildixtsp/action';
 export const SUBSCRIPTION_EXPIRES_SECONDS = 3600;
 export const TAPI_PUBLISH_EXPIRES_SECONDS = 1;
 
+export const DEFAULT_DISCONNECT_TIMEOUT_MS = 10000;
+export const DEFAULT_READY_TIMEOUT_MS = 10000;
+
 export const DEFAULT_USER_AGENT = 'callcontrol';
 
 export const RESUBSCRIBE_MIN_DELAY_MS = 3000;

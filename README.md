@@ -116,6 +116,8 @@ manually verify this library end-to-end.
 | `logToConsole` | `boolean` | `true`, unless `logger` is set (then `false`) | Whether sip.js also writes to the console via its built-in writer |
 | `keepAliveInterval` | `number` | `30` | Seconds between WebSocket keep-alive pings (double-CRLF); set to `0` to disable |
 | `transportOptions` | `Partial<Web.TransportOptions>` (sip.js) | — | Escape hatch merged into sip.js's WebSocket transport options — `server` is always fixed and can't be overridden here; use for `connectionTimeout`, `keepAliveDebounce`, `traceSip`, etc. |
+| `expiresSeconds` | `number` | `3600` | Seconds the REGISTER and each event subscription ask the PBX to keep them — and so how long one that is not ended cleanly (a killed process) lingers on the PBX. A short value such as `120` suits tests and other short-lived processes; sip.js refreshes them in time while connected. Positive integer |
+| `disconnectTimeoutMs` | `number` | `10000` | How long `disconnect()` (and the teardown a reconnect does) waits for the PBX to answer the unregistration and the unsubscriptions before carrying on without the answer |
 
 By default, sip.js's own (very verbose) internal logging is quiet — only `error`-level output goes to the
 console. To route it through your own logging pipeline instead:
@@ -149,7 +151,9 @@ logger: (level, category, label, content) => {
 | Method | Description |
 |---|---|
 | `connect(): Promise<void>` | Registers with the PBX and subscribes to call/device/presence/routing events. Rejects (and never emits `registered`) if the PBX rejects the initial `REGISTER` — e.g. wrong `sipPassword` |
-| `disconnect(): Promise<void>` | Unregisters and tears down the connection; no further reconnect attempts follow |
+| `disconnect(): Promise<void>` | Ends the registration and the subscriptions (sent together, waited for at most `disconnectTimeoutMs`), then stops the connection; no further reconnect attempts follow. It never hangs and does not reject |
+| `isReady(): boolean` | `true` once the PBX has reported the user's dialogs after the last (re)connect, i.e. `getActiveCalls()` can be trusted |
+| `waitUntilReady(timeoutMs = 10000): Promise<void>` | Resolves when `isReady()` is true; rejects after `timeoutMs`. `connect()` resolves when the registration is accepted, which is earlier: right after it, a call that is already going on may not be known yet, so wait here before reading `getActiveCalls()` or hanging calls up |
 
 ### Call control
 
@@ -191,6 +195,7 @@ instead of ringing all of them.
 | `registered` | — | Initial connect or reconnect succeeds |
 | `reconnecting` | `{ attempt: number }` | Connection was lost and a reconnect attempt is scheduled |
 | `error` | `Error` | An async operation (subscribe, publish, invite rejection) failed |
+| `ready` | — | The first dialog NOTIFY of a (re)connect has been applied: `getActiveCalls()` is current. Emitted again after every reconnect |
 | `callStart` | `Call` | A new dialog appears |
 | `callUpdate` | `Call` | An existing dialog's state changes (e.g. ringing → answered, held) |
 | `callEnd` | `Call` | A dialog terminates or disappears from the active set |

@@ -85,4 +85,16 @@ export interface CallControlConfig {
    * coupling to sip.js's API surface.
    */
   transportOptions?: Partial<Omit<Web.TransportOptions, 'server'>>;
+  /**
+   * Seconds the REGISTER and each event subscription (dialog, reg, active-device) ask the PBX to keep them, and so
+   * how long one that is not ended cleanly (a killed process) stays on the PBX. Defaults to `3600`. A short value,
+   * e.g. `120`, suits tests and other short-lived processes; sip.js refreshes them in time while connected, at the
+   * cost of more traffic. Must be a positive integer.
+   */
+  expiresSeconds?: number;
+  /**
+   * How long `disconnect()` (and the teardown a reconnect does) waits for the PBX to answer the unregistration and the
+   * unsubscriptions before it carries on without the answer. Defaults to `10000`. Must be a positive number.
+   */
+  disconnectTimeoutMs?: number;
 }

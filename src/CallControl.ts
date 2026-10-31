@@ -13,6 +13,8 @@ import {
 import { getResubscribeDelayMs } from './backoff';
 import {
   ACTIVE_DEVICE_EVENT_PACKAGE,
+  DEFAULT_DISCONNECT_TIMEOUT_MS,
+  DEFAULT_READY_TIMEOUT_MS,
   DEFAULT_USER_AGENT,
   DIALOG_EVENT_PACKAGE,
   REG_EVENT_PACKAGE,
@@ -29,6 +31,15 @@ import { parseActiveDeviceXml } from './xml/activeDeviceParser';
 import { parseDialogInfoXml } from './xml/dialogInfoParser';
 import { parseRegistrationInfoXml } from './xml/registrationInfoParser';
 
+// Runs `action` and gives back a promise that never rejects: a failing or throwing teardown step must not stop the others.
+function attempt(action: () => Promise<unknown> | undefined): Promise<unknown> {
+  try {
+    return Promise.resolve(action()).catch(() => undefined);
+  } catch {
+    return Promise.resolve();
+  }
+}
+
 function buildAor(extension: string, pbxAddress: string): string {
   return `sip:${extension}@${pbxAddress}`;
 }
@@ -44,6 +55,8 @@ class TapiPublisher extends Publisher {
 export class CallControl extends EventEmitter {
   private readonly config: CallControlConfig;
   private readonly aorUri: URI;
+  private readonly expiresSeconds: number;
+  private readonly disconnectTimeoutMs: number;
 
   private ua: UserAgent | undefined;
   private registerer: Registerer | undefined;
@@ -51,6 +64,9 @@ export class CallControl extends EventEmitter {
   private regSubscriber: Subscriber | undefined;
   private activeDeviceSubscriber: Subscriber | undefined;
   private stopping = false;
+  // True once the first dialog NOTIFY of the current registration has been applied, i.e. `getActiveCalls()` can be
+  // trusted. Reset whenever the registration is re-created.
+  private ready = false;
   // Bumped every time registerAndSubscribe() runs. Each registerer/subscriber's
   // stateChange listener captures the generation it was created under; a
   // Terminated event from a stale generation (fired during or after disposal,
@@ -73,6 +89,14 @@ export class CallControl extends EventEmitter {
   constructor(config: CallControlConfig) {
     super();
     this.config = config;
+    this.expiresSeconds = config.expiresSeconds ?? SUBSCRIPTION_EXPIRES_SECONDS;
+    if (!Number.isInteger(this.expiresSeconds) || this.expiresSeconds <= 0) {
+      throw new Error(`CallControl: expiresSeconds must be a positive integer, got ${config.expiresSeconds}`);
+    }
+    this.disconnectTimeoutMs = config.disconnectTimeoutMs ?? DEFAULT_DISCONNECT_TIMEOUT_MS;
+    if (!(this.disconnectTimeoutMs > 0) || !Number.isFinite(this.disconnectTimeoutMs)) {
+      throw new Error(`CallControl: disconnectTimeoutMs must be a positive number, got ${config.disconnectTimeoutMs}`);
+    }
     const uri = UserAgent.makeURI(buildAor(config.extension, config.pbxAddress));
     if (!uri) {
       throw new Error(
@@ -121,13 +145,42 @@ export class CallControl extends EventEmitter {
 
   async disconnect(): Promise<void> {
     this.stopping = true;
+    this.ready = false;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = undefined;
     }
     await this.disposeRegistrationAndSubscriptions();
-    await this.ua?.stop();
+    await this.bounded(attempt(() => this.ua?.stop()));
     this.ua = undefined;
+  }
+
+  /** Whether the first dialog NOTIFY of the current registration has been applied, so `getActiveCalls()` is current. */
+  isReady(): boolean {
+    return this.ready;
+  }
+
+  /**
+   * Resolves once `getActiveCalls()` is current: the PBX has reported the user's dialogs after the last (re)connect.
+   * `connect()` resolves when the registration is accepted, which is earlier, so right after it a call that is already
+   * going on may not be known yet. Rejects when nothing arrives within `timeoutMs` (default 10 s).
+   */
+  waitUntilReady(timeoutMs = DEFAULT_READY_TIMEOUT_MS): Promise<void> {
+    if (this.ready) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve, reject) => {
+      const onReady = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      const timer = setTimeout(() => {
+        this.off('ready', onReady);
+        reject(new Error(`CallControl: no initial dialog state within ${timeoutMs} ms`));
+      }, timeoutMs);
+      this.once('ready', onReady);
+    });
   }
 
   getActiveCalls(): Call[] {
@@ -209,10 +262,11 @@ export class CallControl extends EventEmitter {
     }
     this.registrationGeneration += 1;
     const generation = this.registrationGeneration;
+    this.ready = false;
     await this.disposeRegistrationAndSubscriptions();
 
     this.registerer = new Registerer(this.ua, {
-      expires: SUBSCRIPTION_EXPIRES_SECONDS,
+      expires: this.expiresSeconds,
       extraHeaders: ['X-Disable-DirectRTP: yes'],
     });
     this.registerer.stateChange.addListener((state) => {
@@ -241,15 +295,41 @@ export class CallControl extends EventEmitter {
   // stateChange listeners were created under the previous generation, so any
   // Terminated event this triggers (immediately or later) is a no-op per the
   // generation check in each listener — see registrationGeneration above.
+  //
+  // The unregistration and the unsubscriptions go out together and are waited for at most `disconnectTimeoutMs`: a PBX
+  // (or a socket that is already gone) that never answers one must not hold up the rest, nor the caller. The
+  // unregistration is the one that matters; it is no longer queued behind three unsubscriptions.
   private async disposeRegistrationAndSubscriptions(): Promise<void> {
-    await this.dialogSubscriber?.dispose().catch(() => undefined);
-    await this.regSubscriber?.dispose().catch(() => undefined);
-    await this.activeDeviceSubscriber?.dispose().catch(() => undefined);
-    await this.registerer?.unregister().catch(() => undefined);
+    const registerer = this.registerer;
+    const dialogSubscriber = this.dialogSubscriber;
+    const regSubscriber = this.regSubscriber;
+    const activeDeviceSubscriber = this.activeDeviceSubscriber;
     this.dialogSubscriber = undefined;
     this.regSubscriber = undefined;
     this.activeDeviceSubscriber = undefined;
     this.registerer = undefined;
+
+    await this.bounded(
+      Promise.all([
+        attempt(() => registerer?.unregister()),
+        attempt(() => dialogSubscriber?.dispose()),
+        attempt(() => regSubscriber?.dispose()),
+        attempt(() => activeDeviceSubscriber?.dispose()),
+      ]),
+    );
+  }
+
+  // Waits for `work`, but no longer than `disconnectTimeoutMs`.
+  private async bounded(work: Promise<unknown>): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, this.disconnectTimeoutMs);
+    });
+    try {
+      await Promise.race([work, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private subscribeToDialogEvents(generation: number): void {
@@ -257,7 +337,7 @@ export class CallControl extends EventEmitter {
       return;
     }
     const subscriber = new Subscriber(this.ua, this.aorUri, DIALOG_EVENT_PACKAGE, {
-      expires: SUBSCRIPTION_EXPIRES_SECONDS,
+      expires: this.expiresSeconds,
     });
     subscriber.delegate = {
       onNotify: (notification) => {
@@ -291,7 +371,7 @@ export class CallControl extends EventEmitter {
       return;
     }
     const subscriber = new Subscriber(this.ua, this.aorUri, REG_EVENT_PACKAGE, {
-      expires: SUBSCRIPTION_EXPIRES_SECONDS,
+      expires: this.expiresSeconds,
     });
     subscriber.delegate = {
       onNotify: (notification) => {
@@ -325,7 +405,7 @@ export class CallControl extends EventEmitter {
       return;
     }
     const subscriber = new Subscriber(this.ua, this.aorUri, ACTIVE_DEVICE_EVENT_PACKAGE, {
-      expires: SUBSCRIPTION_EXPIRES_SECONDS,
+      expires: this.expiresSeconds,
     });
     subscriber.delegate = {
       onNotify: (notification) => {
@@ -355,9 +435,17 @@ export class CallControl extends EventEmitter {
   }
 
   private handleDialogNotify(xmlBody: string): void {
-    if (!xmlBody) {
-      return;
+    if (xmlBody) {
+      this.applyDialogInfo(xmlBody);
     }
+    // An empty first NOTIFY is a state too: the user has no dialogs.
+    if (!this.ready) {
+      this.ready = true;
+      this.emit('ready');
+    }
+  }
+
+  private applyDialogInfo(xmlBody: string): void {
     const { dialogs, presence } = parseDialogInfoXml(xmlBody);
 
     const { started, updated, ended } = this.callState.apply(dialogs);
