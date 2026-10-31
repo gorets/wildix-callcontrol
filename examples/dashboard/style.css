@@ -81,7 +81,9 @@ body {
 }
 
 .repo-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   margin-top: 0.6rem;
   font-size: 0.8rem;
   color: var(--accent);
@@ -213,10 +215,40 @@ button:active {
   gap: 0.4rem;
 }
 
+.icon {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: -0.125em;
+}
+
 .presence-icon {
+  display: inline-flex;
   font-size: 0.7rem;
   line-height: 1;
   flex-shrink: 0;
+  color: #9ca3af;
+}
+
+.presence-icon[data-status="online"] {
+  color: #22c55e;
+}
+
+.presence-icon[data-status="away"] {
+  color: #eab308;
+}
+
+.presence-icon[data-status="dnd"] {
+  color: #ef4444;
+}
+
+.presence-icon[data-status="only-sip"] {
+  color: #3b82f6;
+}
+
+.call-direction {
+  display: inline-flex;
+  color: var(--text-muted);
 }
 
 .card-pbx-address {
@@ -299,6 +331,7 @@ button:active {
 }
 
 .error-dismiss {
+  display: inline-flex;
   background: none;
   color: inherit;
   padding: 0;
@@ -370,6 +403,9 @@ summary {
 }
 
 .call-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.7rem;
   font-size: 0.8rem;
   background: var(--surface);

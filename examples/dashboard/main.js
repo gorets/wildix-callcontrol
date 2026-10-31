@@ -1,3 +1,4 @@
+import { Icons, iconElement } from './icons.js';
 import { addUser, loadState, removeUser, saveState } from './storage.js';
 import { createUserSession } from './userSession.js';
 
@@ -10,6 +11,8 @@ const extensionInput = document.getElementById('extension-input');
 const sipPasswordInput = document.getElementById('sip-password-input');
 const addUserForm = document.getElementById('add-user-form');
 const sessionsContainer = document.getElementById('sessions');
+
+document.querySelector('.repo-link')?.append(iconElement(Icons.externalLink));
 
 webhookUrlInput.value = state.webhookUrl;
 

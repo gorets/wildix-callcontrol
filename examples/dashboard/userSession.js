@@ -1,4 +1,5 @@
 import { CallControl, KNOWN_DEVICE_NAMES } from '../../dist/index.mjs';
+import { Icons, iconElement, iconMarkup } from './icons.js';
 import { postWebhookEvent } from './webhook.js';
 
 const CALL_STATE_LABEL = {
@@ -47,17 +48,18 @@ function getDeviceDisplayName(device) {
 }
 
 // Wildix presence statuses aren't a fixed enum (they're passed through as a raw
-// lowercased string from the PBX), so unrecognized values fall back to ⚪.
-const PRESENCE_EMOJI = {
-  online: '🟢',
-  away: '🟡',
-  dnd: '🔴',
-  offline: '⚪',
-  'only-sip': '🔵',
-};
+// lowercased string from the PBX), so unrecognized values fall back to 'offline'.
+// The dot's colour comes from CSS, keyed on the status.
+const KNOWN_PRESENCE_STATUSES = new Set(['online', 'away', 'dnd', 'offline', 'only-sip']);
 
-function getPresenceEmoji(status) {
-  return PRESENCE_EMOJI[status] ?? '⚪';
+function getPresenceStatus(status) {
+  return KNOWN_PRESENCE_STATUSES.has(status) ? status : 'offline';
+}
+
+function renderPresenceIcon(element, status) {
+  element.dataset.status = getPresenceStatus(status);
+  element.replaceChildren(iconElement(Icons.presence, { fill: 'currentColor' }));
+  element.title = status ?? 'unknown';
 }
 
 function getCallCapabilities(call) {
@@ -92,7 +94,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       <div class="card-title-group">
         <h2 class="card-title">
           <span class="card-title-text"></span>
-          <span class="presence-icon">⚪</span>
+          <span class="presence-icon"></span>
         </h2>
         <p class="card-pbx-address"></p>
         <p class="status-message" hidden></p>
@@ -102,7 +104,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     </header>
     <div class="error-banner" hidden>
       <span class="error-message"></span>
-      <button class="error-dismiss" type="button">✕</button>
+      <button class="error-dismiss" type="button" aria-label="Dismiss">${iconMarkup(Icons.dismiss)}</button>
     </div>
     <section class="calls"></section>
     <form class="make-call-form">
@@ -136,6 +138,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   const makeCallDeviceSelect = card.querySelector('.make-call-device');
   const makeCallSubmitBtn = card.querySelector('.make-call-form button[type="submit"]');
   const presenceIcon = card.querySelector('.presence-icon');
+  renderPresenceIcon(presenceIcon, undefined);
   const statusMessage = card.querySelector('.status-message');
   const devicesList = card.querySelector('.devices-list');
 
@@ -210,20 +213,25 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
         </div>
         <div class="call-actions">
           <select class="answer-device"><option value="">(any device)</option></select>
-          <button data-action="answer" type="button">✅ Answer</button>
-          <button data-action="hold" type="button">⏸️ Hold</button>
-          <button data-action="resume" type="button">▶️ Resume</button>
-          <button data-action="hangup" type="button">📴 Hangup</button>
+          <button data-action="answer" type="button">${iconMarkup(Icons.answer)}Answer</button>
+          <button data-action="hold" type="button">${iconMarkup(Icons.hold)}Hold</button>
+          <button data-action="resume" type="button">${iconMarkup(Icons.resume)}Resume</button>
+          <button data-action="hangup" type="button">${iconMarkup(Icons.hangup)}Hangup</button>
           <input class="dtmf-input" placeholder="digits" size="4" />
-          <button data-action="dtmf" type="button">🔢 DTMF</button>
+          <button data-action="dtmf" type="button">${iconMarkup(Icons.dtmf)}DTMF</button>
           <input class="transfer-destination" placeholder="transfer to" />
-          <button data-action="transfer" type="button">↪️ Transfer</button>
+          <button data-action="transfer" type="button">${iconMarkup(Icons.transfer)}Transfer</button>
           <select class="attended-transfer-target"><option value="">(pick call)</option></select>
-          <button data-action="attended-transfer" type="button">🤝 Attended transfer</button>
+          <button data-action="attended-transfer" type="button">${iconMarkup(Icons.attendedTransfer)}Attended transfer</button>
         </div>
       `;
 
-      row.querySelector('.call-direction').textContent = call.direction === 'inbound' ? '←' : '→';
+      const directionElement = row.querySelector('.call-direction');
+      const isInbound = call.direction === 'inbound';
+      directionElement.replaceChildren(iconElement(isInbound ? Icons.inbound : Icons.outbound));
+      directionElement.title = isInbound ? 'Incoming' : 'Outgoing';
+      directionElement.setAttribute('role', 'img');
+      directionElement.setAttribute('aria-label', directionElement.title);
       row.querySelector('.call-name').textContent = call.remoteName ?? '';
       row.querySelector('.call-number').textContent = call.remoteNumber ?? '';
       row.querySelector('.call-state').textContent = `[${CALL_STATE_LABEL[call.state] ?? call.state}]`;
@@ -295,8 +303,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   }
 
   function renderPresence() {
-    presenceIcon.textContent = getPresenceEmoji(presence?.status);
-    presenceIcon.title = presence?.status ?? 'unknown';
+    renderPresenceIcon(presenceIcon, presence?.status);
     statusMessage.textContent = presence?.message ?? '';
     statusMessage.hidden = !presence?.message;
   }
