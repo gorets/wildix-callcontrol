@@ -8,6 +8,9 @@ export const TAPI_PUBLISH_EXPIRES_SECONDS = 1;
 
 export const DEFAULT_DISCONNECT_TIMEOUT_MS = 10000;
 export const DEFAULT_READY_TIMEOUT_MS = 10000;
+// Real PBXs never complete Subscriber.dispose() (nor change its state) although the subscription is gone within a
+// fraction of a second, so the unsubscriptions only get this long before the connection is stopped.
+export const SUBSCRIPTION_DISPOSE_GRACE_MS = 500;
 
 export const DEFAULT_USER_AGENT = 'callcontrol';
 

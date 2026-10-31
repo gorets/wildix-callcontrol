@@ -165,10 +165,67 @@ describe('CallControl disconnect', () => {
     expect(registerer.unregister).toHaveBeenCalledTimes(1);
   });
 
-  test('gives up on a subscription that never answers after 10 s by default, and still stops the UserAgent', async () => {
+  // The real PBX never completes `Subscriber.dispose()` (no state change either) although the subscription is gone
+  // within a fraction of a second, so the subscriptions get only a short grace period.
+  test('gives a subscription that never answers half a second, then stops the UserAgent', async () => {
     const callControl = new CallControl(config);
     await callControl.connect();
-    (Subscriber as any).instances[0].dispose.mockImplementation(never);
+    for (const subscriber of (Subscriber as any).instances) {
+      subscriber.dispose.mockImplementation(never);
+    }
+    const ua = (UserAgent as any).instances[0];
+
+    const finished = jest.fn();
+    callControl.disconnect().then(finished);
+    await jest.advanceTimersByTimeAsync(499);
+    expect(finished).not.toHaveBeenCalled();
+    expect(ua.stop).not.toHaveBeenCalled();
+
+    await jest.advanceTimersByTimeAsync(1);
+    expect(finished).toHaveBeenCalledTimes(1);
+    expect(ua.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test('waits for the registration to be reported ended, not only for the request to be sent', async () => {
+    const callControl = new CallControl(config);
+    await callControl.connect();
+    const registerer = (Registerer as any).instances[0];
+    registerer.unregister.mockImplementation(() => Promise.resolve(undefined));
+    const ua = (UserAgent as any).instances[0];
+
+    const finished = jest.fn();
+    callControl.disconnect().then(finished);
+    await jest.advanceTimersByTimeAsync(2000);
+    expect(finished).not.toHaveBeenCalled();
+    expect(ua.stop).not.toHaveBeenCalled();
+
+    registerer.stateChange.emit('Unregistered');
+    await jest.advanceTimersByTimeAsync(0);
+    expect(finished).toHaveBeenCalledTimes(1);
+    expect(ua.stop).toHaveBeenCalledTimes(1);
+  });
+
+  test('does not wait for a registration that is already unregistered or terminated', async () => {
+    for (const state of ['Unregistered', 'Terminated']) {
+      resetMocks();
+      const callControl = new CallControl(config);
+      await callControl.connect();
+      const registerer = (Registerer as any).instances[0];
+      registerer.state = state;
+      registerer.unregister.mockImplementation(() => new Promise<void>(() => {}));
+
+      const finished = jest.fn();
+      callControl.disconnect().then(finished);
+      await jest.advanceTimersByTimeAsync(500);
+
+      expect(finished).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  test('waits 10 s by default for a registration that never ends, and still stops the UserAgent', async () => {
+    const callControl = new CallControl(config);
+    await callControl.connect();
+    (Registerer as any).instances[0].unregister.mockImplementation(never);
     const ua = (UserAgent as any).instances[0];
 
     const finished = jest.fn();

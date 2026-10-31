@@ -18,6 +18,7 @@ import {
   DEFAULT_USER_AGENT,
   DIALOG_EVENT_PACKAGE,
   REG_EVENT_PACKAGE,
+  SUBSCRIPTION_DISPOSE_GRACE_MS,
   SUBSCRIPTION_EXPIRES_SECONDS,
   TAPI_EVENT_PACKAGE,
 } from './constants';
@@ -296,9 +297,10 @@ export class CallControl extends EventEmitter {
   // Terminated event this triggers (immediately or later) is a no-op per the
   // generation check in each listener — see registrationGeneration above.
   //
-  // The unregistration and the unsubscriptions go out together and are waited for at most `disconnectTimeoutMs`: a PBX
-  // (or a socket that is already gone) that never answers one must not hold up the rest, nor the caller. The
-  // unregistration is the one that matters; it is no longer queued behind three unsubscriptions.
+  // The unregistration and the unsubscriptions go out together. The registration is the one that matters, so it is
+  // waited for until it is reported ended (`unregister()` itself resolves as soon as the request is sent), at most
+  // `disconnectTimeoutMs`; a PBX (or a socket that is already gone) that never answers must not hold the caller up. The
+  // unsubscriptions only get a short grace period: a real PBX never completes `Subscriber.dispose()`.
   private async disposeRegistrationAndSubscriptions(): Promise<void> {
     const registerer = this.registerer;
     const dialogSubscriber = this.dialogSubscriber;
@@ -309,21 +311,48 @@ export class CallControl extends EventEmitter {
     this.activeDeviceSubscriber = undefined;
     this.registerer = undefined;
 
+    const unregistered = registerer ? this.unregister(registerer) : Promise.resolve();
+    const unsubscribed = Promise.all([
+      attempt(() => dialogSubscriber?.dispose()),
+      attempt(() => regSubscriber?.dispose()),
+      attempt(() => activeDeviceSubscriber?.dispose()),
+    ]);
+
     await this.bounded(
-      Promise.all([
-        attempt(() => registerer?.unregister()),
-        attempt(() => dialogSubscriber?.dispose()),
-        attempt(() => regSubscriber?.dispose()),
-        attempt(() => activeDeviceSubscriber?.dispose()),
-      ]),
+      Promise.all([unregistered, this.bounded(unsubscribed, SUBSCRIPTION_DISPOSE_GRACE_MS)]),
+      this.disconnectTimeoutMs,
     );
   }
 
-  // Waits for `work`, but no longer than `disconnectTimeoutMs`.
-  private async bounded(work: Promise<unknown>): Promise<void> {
+  // Sends the unregistration and resolves once the registerer reports it ended, or the request fails (a failed request
+  // never changes the state).
+  private unregister(registerer: Registerer): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const isOver = (state: RegistererState) =>
+        state === RegistererState.Unregistered || state === RegistererState.Terminated;
+
+      if (isOver(registerer.state)) {
+        resolve();
+        return;
+      }
+      registerer.stateChange.addListener((state) => {
+        if (isOver(state)) {
+          resolve();
+        }
+      });
+      try {
+        Promise.resolve(registerer.unregister()).catch(() => resolve());
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // Waits for `work`, but no longer than `timeoutMs`.
+  private async bounded(work: Promise<unknown>, timeoutMs: number = this.disconnectTimeoutMs): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, this.disconnectTimeoutMs);
+      timer = setTimeout(resolve, timeoutMs);
     });
     try {
       await Promise.race([work, timeout]);

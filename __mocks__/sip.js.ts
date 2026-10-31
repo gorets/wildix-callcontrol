@@ -66,7 +66,14 @@ export class Registerer {
     }
     return Promise.resolve(undefined);
   });
-  unregister = jest.fn().mockResolvedValue(undefined);
+  state = RegistererState.Initial;
+  // Mirrors real sip.js: the promise resolves once the request is sent (immediately); the registration is over when
+  // the state changes to Unregistered, a moment later.
+  unregister = jest.fn(() => {
+    this.state = RegistererState.Unregistered;
+    this.stateChange.emit(RegistererState.Unregistered);
+    return Promise.resolve(undefined);
+  });
 
   constructor(ua: UserAgent, options: any) {
     this.ua = ua;
