@@ -10,13 +10,20 @@ export function loadState() {
     return {
       webhookUrl: typeof parsed.webhookUrl === 'string' ? parsed.webhookUrl : '',
       users: Array.isArray(parsed.users)
-        ? parsed.users.filter(
-            (u) =>
-              u &&
-              typeof u.pbxAddress === 'string' &&
-              typeof u.extension === 'string' &&
-              typeof u.sipPassword === 'string',
-          )
+        ? parsed.users
+            .filter(
+              (u) =>
+                u &&
+                typeof u.pbxAddress === 'string' &&
+                typeof u.extension === 'string' &&
+                typeof u.sipPassword === 'string',
+            )
+            .map((u) => ({
+              pbxAddress: u.pbxAddress,
+              extension: u.extension,
+              sipPassword: u.sipPassword,
+              paused: u.paused === true,
+            }))
         : [],
     };
   } catch {
@@ -32,6 +39,11 @@ export function addUser(state, pbxAddress, extension, sipPassword) {
   const users = state.users.filter((u) => u.extension !== extension);
   users.push({ pbxAddress, extension, sipPassword });
   return { ...state, users };
+}
+
+/** A paused user keeps its settings but is not connected, now or on the next page load. */
+export function setUserPaused(state, extension, paused) {
+  return { ...state, users: state.users.map((u) => (u.extension === extension ? { ...u, paused } : u)) };
 }
 
 export function removeUser(state, extension) {

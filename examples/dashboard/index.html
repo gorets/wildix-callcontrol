@@ -58,6 +58,16 @@
               <button type="button" data-filter="in-call" aria-pressed="false">In call <span id="count-in-call">0</span></button>
               <button type="button" data-filter="idle" aria-pressed="false">Idle <span id="count-idle">0</span></button>
             </fieldset>
+            <button
+              id="paused-toggle"
+              class="btn btn-secondary btn-compact paused-toggle"
+              type="button"
+              aria-expanded="false"
+              aria-controls="paused-users"
+              hidden
+            >
+              <span data-icon="pauseUser"></span>Paused <span id="paused-toggle-count" class="paused-toggle-count">0</span>
+            </button>
             <div class="search">
               <span data-icon="search"></span>
               <label for="user-search" class="visually-hidden">Find extension</label>
@@ -89,10 +99,30 @@
           <p class="hint add-user-hint">Credentials are saved in this browser's localStorage.</p>
         </form>
 
+        <section id="paused-users" class="paused-strip" aria-label="Paused users" hidden>
+          <span class="paused-label">Paused · <span id="paused-count">0</span></span>
+          <ul id="paused-list" class="paused-list"></ul>
+          <button id="resume-all" class="btn btn-secondary btn-compact" type="button">Resume all</button>
+        </section>
+
         <div id="sessions" class="sessions"></div>
         <p id="sessions-empty" class="empty-state" hidden></p>
       </section>
     </main>
+
+    <dialog id="confirm-remove" class="confirm-dialog" aria-labelledby="confirm-remove-title">
+      <form method="dialog">
+        <h2 id="confirm-remove-title">Remove user <span id="confirm-remove-ext" class="mono"></span>?</h2>
+        <p>
+          It disconnects, and its PBX host, extension and SIP password are deleted from this browser. To keep them,
+          pause the user instead.
+        </p>
+        <div class="confirm-actions">
+          <button class="btn btn-secondary btn-compact" type="submit" value="cancel">Cancel</button>
+          <button class="btn btn-danger btn-compact" type="submit" value="remove">Remove</button>
+        </div>
+      </form>
+    </dialog>
 
     <script type="module" src="./main.js"></script>
   </body>

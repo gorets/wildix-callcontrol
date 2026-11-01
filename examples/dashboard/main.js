@@ -1,5 +1,5 @@
-import { hydrateIcons } from './icons.js';
-import { addUser, loadState, removeUser, saveState } from './storage.js';
+import { hydrateIcons, Icons, iconElement } from './icons.js';
+import { addUser, loadState, removeUser, saveState, setUserPaused } from './storage.js';
 import { createUserSession, formatDuration } from './userSession.js';
 
 const state = loadState();
@@ -16,6 +16,16 @@ const addUserForm = document.getElementById('add-user-form');
 const addUserToggle = document.getElementById('add-user-toggle');
 const addUserCancel = document.getElementById('add-user-cancel');
 const usersControls = document.querySelector('.users-controls');
+const pausedStrip = document.getElementById('paused-users');
+const pausedList = document.getElementById('paused-list');
+const pausedCount = document.getElementById('paused-count');
+const resumeAllBtn = document.getElementById('resume-all');
+const pausedToggle = document.getElementById('paused-toggle');
+const pausedToggleCount = document.getElementById('paused-toggle-count');
+// The paused strip stays folded behind the "Paused N" button unless opened, or unless nobody is connected.
+let pausedOpen = false;
+const confirmDialog = document.getElementById('confirm-remove');
+const confirmExtension = document.getElementById('confirm-remove-ext');
 const sessionsContainer = document.getElementById('sessions');
 const emptyState = document.getElementById('sessions-empty');
 const searchInput = document.getElementById('user-search');
@@ -77,9 +87,12 @@ function renderOverview() {
 
   syncAddUserMode();
 
-  // With nobody connected the open form says it all: no filters, no empty-state note.
-  usersControls.hidden = sessions.size === 0;
-  if (sessions.size > 0 && visible === 0) {
+  // With nobody saved at all the open form says it all: no filters, no empty-state note.
+  usersControls.hidden = state.users.length === 0;
+  if (sessions.size === 0 && state.users.length > 0) {
+    emptyState.textContent = 'All users are paused. Resume the ones you need above.';
+    emptyState.hidden = false;
+  } else if (sessions.size > 0 && visible === 0) {
     emptyState.textContent = 'No users match this filter.';
     emptyState.hidden = false;
   } else {
@@ -102,6 +115,105 @@ searchInput.addEventListener('input', () => {
   renderOverview();
 });
 
+/** Removing forgets the user's credentials, so it asks first; resolves true only on the Remove button. */
+function confirmRemove(extension) {
+  return new Promise((resolve) => {
+    confirmExtension.textContent = extension;
+    confirmDialog.returnValue = '';
+    confirmDialog.addEventListener('close', () => resolve(confirmDialog.returnValue === 'remove'), { once: true });
+    confirmDialog.showModal();
+  });
+}
+
+/** The strip of paused users: one chip each, a click reconnects it. */
+function renderPaused() {
+  const paused = state.users.filter((user) => user.paused);
+  const open = paused.length > 0 && (pausedOpen || sessions.size === 0);
+  pausedToggle.hidden = paused.length === 0;
+  pausedToggle.setAttribute('aria-expanded', String(open));
+  pausedToggleCount.textContent = String(paused.length);
+  pausedStrip.hidden = !open;
+  pausedCount.textContent = String(paused.length);
+  pausedList.replaceChildren();
+  for (const user of paused) {
+    const chip = document.createElement('li');
+    chip.className = 'paused-chip';
+
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'paused-resume';
+    resume.title = `Resume ${user.extension} · ${user.pbxAddress}`;
+    resume.setAttribute('aria-label', `Resume user ${user.extension}`);
+    resume.append(iconElement(Icons.resumeUser), user.extension);
+    resume.addEventListener('click', () => resumeUser(user.extension));
+
+    const forget = document.createElement('button');
+    forget.type = 'button';
+    forget.className = 'paused-forget';
+    forget.title = 'Remove user';
+    forget.setAttribute('aria-label', `Remove user ${user.extension}`);
+    forget.append(iconElement(Icons.dismiss));
+    forget.addEventListener('click', async () => {
+      if (!(await confirmRemove(user.extension))) {
+        return;
+      }
+      Object.assign(state, removeUser(state, user.extension));
+      saveState(state);
+      renderPaused();
+      renderOverview();
+    });
+
+    chip.append(resume, forget);
+    pausedList.append(chip);
+  }
+}
+
+/** Disconnects a user but keeps its settings, so a click on its chip brings it back. */
+function pauseSession(extension) {
+  const entry = sessions.get(extension);
+  if (!entry) {
+    return;
+  }
+  entry.session.callControl.disconnect().catch(() => undefined);
+  entry.session.card.remove();
+  sessions.delete(extension);
+  Object.assign(state, setUserPaused(state, extension, true));
+  saveState(state);
+  renderPaused();
+  renderOverview();
+}
+
+function resumeUser(extension) {
+  const user = state.users.find((u) => u.extension === extension);
+  if (!user) {
+    return;
+  }
+  Object.assign(state, setUserPaused(state, extension, false));
+  saveState(state);
+  renderPaused();
+  addSession(user.pbxAddress, user.extension, user.sipPassword, false);
+}
+
+/** Pauses every other connected user: a quick way down to the few a test needs. */
+function keepOnly(extension) {
+  for (const other of [...sessions.keys()]) {
+    if (other !== extension) {
+      pauseSession(other);
+    }
+  }
+}
+
+pausedToggle.addEventListener('click', () => {
+  pausedOpen = pausedToggle.getAttribute('aria-expanded') !== 'true';
+  renderPaused();
+});
+
+resumeAllBtn.addEventListener('click', () => {
+  for (const user of state.users.filter((u) => u.paused)) {
+    resumeUser(user.extension);
+  }
+});
+
 function removeSession(extension) {
   const entry = sessions.get(extension);
   if (!entry) {
@@ -121,8 +233,10 @@ function addSession(pbxAddress, extension, sipPassword, persist) {
   }
 
   if (persist) {
+    // Adding a user that is paused replaces it with a connected one, so its chip goes away.
     Object.assign(state, addUser(state, pbxAddress, extension, sipPassword));
     saveState(state);
+    renderPaused();
   }
 
   const session = createUserSession({
@@ -130,7 +244,13 @@ function addSession(pbxAddress, extension, sipPassword, persist) {
     extension,
     sipPassword,
     getWebhookUrl: () => state.webhookUrl,
-    onRemove: () => removeSession(extension),
+    onRemove: async () => {
+      if (await confirmRemove(extension)) {
+        removeSession(extension);
+      }
+    },
+    onPause: () => pauseSession(extension),
+    onKeepOnly: () => keepOnly(extension),
     onChange: renderOverview,
   });
 
@@ -153,7 +273,7 @@ function setAddUserOpen(open, { focus = false } = {}) {
 let addUserWasEmpty = true;
 
 function syncAddUserMode() {
-  const empty = sessions.size === 0;
+  const empty = state.users.length === 0;
   addUserToggle.hidden = empty;
   addUserCancel.hidden = empty;
   if (empty) {
@@ -175,7 +295,7 @@ addUserCancel.addEventListener('click', () => {
 });
 
 addUserForm.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && sessions.size > 0) {
+  if (event.key === 'Escape' && state.users.length > 0) {
     setAddUserOpen(false);
     addUserToggle.focus();
   }
@@ -208,7 +328,26 @@ setInterval(() => {
 renderWebhookStatus();
 renderOverview();
 
-// Restore every previously-added user immediately, without waiting for a click.
-for (const user of state.users) {
+// Restore every previously-added user immediately, without waiting for a click; paused ones only get their chip.
+for (const user of state.users.filter((u) => !u.paused)) {
   addSession(user.pbxAddress, user.extension, user.sipPassword, false);
 }
+renderPaused();
+
+// A card's ⋯ menu is a <details>; it closes on a click anywhere else or on Esc.
+document.addEventListener('click', (event) => {
+  for (const menu of document.querySelectorAll('.card-menu[open]')) {
+    if (!menu.contains(event.target)) {
+      menu.open = false;
+    }
+  }
+});
+document.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') {
+    return;
+  }
+  for (const menu of document.querySelectorAll('.card-menu[open]')) {
+    menu.open = false;
+    menu.querySelector('summary').focus();
+  }
+});

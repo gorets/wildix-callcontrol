@@ -162,7 +162,16 @@ export function formatDuration(ms) {
   return hours > 0 ? `${hours}:${mmss}` : mmss;
 }
 
-export function createUserSession({ pbxAddress, extension, sipPassword, getWebhookUrl, onRemove, onChange }) {
+export function createUserSession({
+  pbxAddress,
+  extension,
+  sipPassword,
+  getWebhookUrl,
+  onRemove,
+  onPause,
+  onKeepOnly,
+  onChange,
+}) {
   const callControl = new CallControl({
     pbxAddress,
     extension,
@@ -200,7 +209,14 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       </div>
       <div class="card-header-actions">
         <span class="status-badge status-connecting">connecting</span>
-        <button class="remove-btn" type="button">${iconMarkup(Icons.remove)}</button>
+        <details class="card-menu">
+          <summary class="icon-btn">${iconMarkup(Icons.more)}</summary>
+          <div class="card-menu-list">
+            <button class="menu-item" type="button" data-menu="pause">${iconMarkup(Icons.pauseUser)}Pause</button>
+            <button class="menu-item" type="button" data-menu="keep-only">${iconMarkup(Icons.keepOnly)}Keep only this</button>
+            <button class="menu-item menu-item-danger" type="button" data-menu="remove">${iconMarkup(Icons.remove)}Remove</button>
+          </div>
+        </details>
       </div>
     </header>
     <div class="error-banner" role="alert" hidden>
@@ -237,7 +253,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   const errorMessage = card.querySelector('.error-message');
   const eventLogList = card.querySelector('.event-log-list');
   const eventCountElement = card.querySelector('.event-count');
-  const removeBtn = card.querySelector('.remove-btn');
+  const cardMenu = card.querySelector('.card-menu');
   const callsSection = card.querySelector('.calls');
   const makeCallForm = card.querySelector('.make-call-form');
   const makeCallDestination = card.querySelector('.make-call-destination');
@@ -247,8 +263,9 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   const devicesList = card.querySelector('.devices-list');
   const devicesCount = card.querySelector('.devices-count');
 
-  removeBtn.setAttribute('aria-label', `Remove user ${extension}`);
-  removeBtn.title = 'Remove user';
+  cardMenu.querySelector('[data-menu="pause"]').title = 'Disconnect but keep the settings';
+  cardMenu.querySelector('summary').setAttribute('aria-label', `More actions for ${extension}`);
+  cardMenu.querySelector('summary').title = 'More actions';
   renderPresenceDot(presenceDot, undefined);
 
   card.querySelector('.error-dismiss').addEventListener('click', () => {
@@ -849,7 +866,16 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     makeCallDestination.value = '';
   });
 
-  removeBtn.addEventListener('click', () => {
+  cardMenu.querySelector('[data-menu="pause"]').addEventListener('click', () => {
+    cardMenu.open = false;
+    onPause?.();
+  });
+  cardMenu.querySelector('[data-menu="keep-only"]').addEventListener('click', () => {
+    cardMenu.open = false;
+    onKeepOnly?.();
+  });
+  cardMenu.querySelector('[data-menu="remove"]').addEventListener('click', () => {
+    cardMenu.open = false;
     onRemove();
   });
 

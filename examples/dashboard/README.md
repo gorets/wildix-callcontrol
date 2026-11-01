@@ -14,7 +14,7 @@ full call control. Each user can belong to a different PBX — the PBX domain is
    to connect users from another PBX in the same dashboard.
 4. The PBX domain, extension, and SIP password for every user, plus the webhook URL, are all saved to this
    browser's `localStorage` — reloading the page reconnects every previously-added user automatically, no
-   re-entry needed. Use each card's remove (trash) button to disconnect a user and forget it.
+   re-entry needed. Use a card's ⋯ menu → Remove to disconnect a user and forget it (after a confirmation), or ⋯ → Pause to disconnect it but keep its settings.
 5. Optionally set a "Webhook URL". When set, every event from every connected user's `CallControl` instance
    (`registered`, `reconnecting`, `error`, `callStart`, `callUpdate`, `callEnd`, `devicesChanged`,
    `presenceChanged`, `activeDeviceChanged`) is POSTed there as JSON:
@@ -32,6 +32,10 @@ This is a manual verification tool, not an automated test — it requires a real
 - With no users connected, the connect form (PBX host, extension, SIP password) is shown in full. Once at least
   one user is connected it folds into an "Add user" button next to the filters, and opens again when the last
   user is removed.
+- A paused user is disconnected (no SIP registration, no events, nothing forwarded to the webhook) but keeps its
+  settings in `localStorage` and stays paused across reloads. Paused users sit as chips in the "Paused" strip above
+  the cards, folded behind a "Paused N" button next to the filters (it opens by itself when nobody is connected): a click reconnects one, "Resume all" reconnects every one, and the × forgets it. A card's ⋯ menu →
+  "Keep only this" pauses every other user, for a test that needs only a few.
 - The toolbar above the cards filters them (All / In call / Idle, with counts) and finds an extension; the
   webhook field shows whether events are being forwarded.
 - A card with a live call is outlined. Each call shows its direction, remote party, state and a duration
