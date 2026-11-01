@@ -17,6 +17,7 @@ const NO_CAPABILITIES = {
   dtmf: false,
   transfer: false,
   attendedTransfer: false,
+  record: false,
 };
 
 // Which actions make sense for a call, given its state AND direction — e.g.
@@ -72,22 +73,75 @@ function renderPresenceDot(element, status) {
   element.setAttribute('aria-label', element.title);
 }
 
-// The three secondary call tools, each revealed as an inline panel by its own button.
+// The secondary call tools, each revealed as an inline panel by its own button. Blind, conference and attended
+// transfer are the three modes of the one Transfer panel, so the row stays a single line.
 const CALL_TOOLS = [
-  { id: 'dtmf', label: 'DTMF', icon: Icons.dtmf, capability: 'dtmf' },
-  { id: 'transfer', label: 'Transfer', icon: Icons.transfer, capability: 'transfer' },
-  { id: 'attended', label: 'Attended', icon: Icons.attendedTransfer, capability: 'attendedTransfer' },
+  { id: 'dtmf', label: 'DTMF', icon: Icons.dtmf },
+  { id: 'transfer', label: 'Transfer', icon: Icons.transfer },
+  { id: 'record', label: 'Record', icon: Icons.record },
 ];
+
+const TRANSFER_MODES = [
+  {
+    id: 'blind',
+    label: 'Blind',
+    submit: 'Transfer',
+    hint: 'Hands the call straight over; you leave it immediately.',
+  },
+  {
+    id: 'conference',
+    label: 'Conference',
+    submit: 'Conference',
+    hint: 'All three talk in a conference; hang up to leave the caller and the destination connected.',
+  },
+  {
+    id: 'attended',
+    label: 'Attended',
+    submit: 'Connect',
+    hint: 'Joins the far ends of this call and your other call; both of your legs end.',
+  },
+];
+
+// Start and Stop draw their glyph in CSS (a record dot, a stop square); Pause and Resume use the call icons.
+const RECORD_ACTIONS = [
+  { value: 'on', label: 'Start' },
+  { value: 'pause', label: 'Pause', icon: Icons.hold },
+  { value: 'unpause', label: 'Resume', icon: Icons.resume },
+  { value: 'off', label: 'Stop' },
+];
+
+const RECORDING_LABEL = { personal: 'Recording', system: 'Recording (PBX rule)', paused: 'Recording paused' };
+
+// What the PBX accepts for each recording state (checked live, except `system`): `on` on a recorded call is rejected
+// with 500 "recording already started", `off` on a stopped one with "recording already stopped". With no state
+// reported every action stays available.
+const RECORD_ACTIONS_FOR_STATE = {
+  off: ['on'],
+  personal: ['pause', 'off'],
+  system: ['pause', 'off'],
+  paused: ['unpause', 'off'],
+};
+
+// The make-call target that is not a device: the PBX rings the user's mobile first (`makeMobilityCall`).
+const MOBILITY_TARGET = 'mobility:';
 
 function getCallCapabilities(call) {
   if (call.state === 'ringing') {
     return { ...NO_CAPABILITIES, answer: call.direction === 'inbound', hangup: true };
   }
   if (call.state === 'answered') {
-    return { ...NO_CAPABILITIES, hold: true, hangup: true, dtmf: true, transfer: true, attendedTransfer: true };
+    return {
+      ...NO_CAPABILITIES,
+      hold: true,
+      hangup: true,
+      dtmf: true,
+      transfer: true,
+      attendedTransfer: true,
+      record: true,
+    };
   }
   if (call.state === 'held') {
-    return { ...NO_CAPABILITIES, resume: true, hangup: true, transfer: true, attendedTransfer: true };
+    return { ...NO_CAPABILITIES, resume: true, hangup: true, transfer: true, attendedTransfer: true, record: true };
   }
   return NO_CAPABILITIES;
 }
@@ -126,7 +180,8 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   // person is in the middle of (which tool panel is open, what they've typed)
   // lives here, keyed by call id, instead of in the DOM.
   const callStartedAt = new Map(); // callId -> ms timestamp the dashboard first saw the call
-  const openTool = new Map(); // callId -> 'dtmf' | 'transfer' | 'attended'
+  const openTool = new Map(); // callId -> 'dtmf' | 'transfer' | 'record'
+  const transferMode = new Map(); // callId -> 'blind' | 'conference' | 'attended'
   const drafts = new Map(); // `${callId}:${toolId}` -> input value
   let focusToolInputFor; // callId whose tool input should take focus after the next render
 
@@ -187,7 +242,6 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   const makeCallForm = card.querySelector('.make-call-form');
   const makeCallDestination = card.querySelector('.make-call-destination');
   const makeCallDeviceSelect = card.querySelector('.make-call-device');
-  const makeCallSubmitBtn = card.querySelector('.make-call-form button[type="submit"]');
   const presenceDot = card.querySelector('.presence-dot');
   const statusMessage = card.querySelector('.status-message');
   const devicesList = card.querySelector('.devices-list');
@@ -282,7 +336,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
   function setCalls(nextCalls) {
     calls = nextCalls;
     const activeIds = new Set(calls.map((call) => call.id));
-    for (const map of [callStartedAt, openTool]) {
+    for (const map of [callStartedAt, openTool, transferMode]) {
       for (const id of map.keys()) {
         if (!activeIds.has(id)) {
           map.delete(id);
@@ -306,25 +360,73 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     text.textContent =
       getCallableDevices().length > 0
         ? 'No active calls'
-        : 'No active calls · sign in on a softphone or x-bees to place calls';
+        : 'No active calls · no devices online, use Mobile (callback) to call';
     hint.append(iconElement(Icons.phone), text);
     callsSection.replaceChildren(hint);
   }
 
-  /** The inline form behind one of the DTMF / Transfer / Attended buttons. */
+  /** Esc inside a panel closes it and hands focus back to the button that opened it. */
+  function closeOnEscape(panel, call, toolId) {
+    panel.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        openTool.delete(call.id);
+        renderCalls();
+        callsSection.querySelector(`[data-call-id="${CSS.escape(call.id)}"] [data-tool="${toolId}"]`)?.focus();
+      }
+    });
+  }
+
+  /** The inline form behind the DTMF or Transfer button; Record has its own panel of buttons. */
   function buildToolPanel(call, toolId, otherCalls, panelId) {
+    if (toolId === 'record') {
+      return buildRecordPanel(call, panelId);
+    }
+
     const panel = document.createElement('form');
-    panel.className = 'call-panel call-form-row';
+    panel.className = 'call-panel';
     panel.id = panelId;
     const inputId = `${panelId}-input`;
 
+    let mode;
+    if (toolId === 'transfer') {
+      const attendedPossible = getCallCapabilities(call).attendedTransfer && otherCalls.length > 0;
+      mode = transferMode.get(call.id) ?? 'blind';
+      if (mode === 'attended' && !attendedPossible) {
+        mode = 'blind';
+      }
+      const modes = document.createElement('div');
+      modes.className = 'transfer-modes';
+      modes.setAttribute('role', 'group');
+      modes.setAttribute('aria-label', 'Transfer type');
+      for (const option of TRANSFER_MODES) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = option.label;
+        button.setAttribute('aria-pressed', String(option.id === mode));
+        if (option.id === 'attended' && !attendedPossible) {
+          button.disabled = true;
+          button.title = 'Attended transfer needs a second call';
+        }
+        button.addEventListener('click', () => {
+          transferMode.set(call.id, option.id);
+          focusToolInputFor = call.id;
+          renderCalls();
+        });
+        modes.append(button);
+      }
+      panel.append(modes);
+    }
+
+    const formRow = document.createElement('div');
+    formRow.className = 'call-form-row';
     const label = document.createElement('label');
     label.htmlFor = inputId;
     const submit = document.createElement('button');
     submit.type = 'submit';
     let field;
 
-    if (toolId === 'attended') {
+    if (mode === 'attended') {
       label.textContent = 'Connect to';
       field = document.createElement('select');
       for (const otherCall of otherCalls) {
@@ -333,7 +435,6 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
         option.textContent = otherCall.remoteName ?? otherCall.remoteNumber ?? otherCall.id;
         field.appendChild(option);
       }
-      submit.textContent = 'Connect';
     } else {
       label.textContent = toolId === 'dtmf' ? 'Digits' : 'Transfer to';
       field = document.createElement('input');
@@ -347,20 +448,23 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       field.addEventListener('input', () => {
         drafts.set(`${call.id}:${toolId}`, field.value);
       });
-      submit.textContent = toolId === 'dtmf' ? 'Send' : 'Transfer';
     }
+    const modeInfo = TRANSFER_MODES.find((option) => option.id === mode);
+    submit.textContent = modeInfo ? modeInfo.submit : 'Send';
     field.id = inputId;
     field.className = 'call-panel-input';
     field.dataset.callId = call.id;
+    formRow.append(label, field, submit);
+    panel.append(formRow);
 
-    panel.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        openTool.delete(call.id);
-        renderCalls();
-        callsSection.querySelector(`[data-call-id="${CSS.escape(call.id)}"] [data-tool="${toolId}"]`)?.focus();
-      }
-    });
+    if (modeInfo) {
+      const hint = document.createElement('p');
+      hint.className = 'panel-hint';
+      hint.textContent = modeInfo.hint;
+      panel.append(hint);
+    }
+
+    closeOnEscape(panel, call, toolId);
 
     panel.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -376,8 +480,12 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
           },
           () => undefined,
         );
-      } else if (toolId === 'transfer') {
-        runAction(callControl.transfer(call.id, value)).then(
+      } else if (mode === 'attended') {
+        runAction(callControl.attendedTransfer(call.id, value)).catch(() => undefined);
+      } else {
+        const sent =
+          mode === 'conference' ? callControl.conferenceTransfer(call.id, value) : callControl.transfer(call.id, value);
+        runAction(sent).then(
           () => {
             drafts.delete(`${call.id}:transfer`);
             openTool.delete(call.id);
@@ -385,12 +493,55 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
           },
           () => undefined,
         );
-      } else {
-        runAction(callControl.attendedTransfer(call.id, value)).catch(() => undefined);
       }
     });
 
-    panel.append(label, field, submit);
+    return panel;
+  }
+
+  /** One button per recording action; only the ones the PBX accepts in the call's recording state are enabled. */
+  function buildRecordPanel(call, panelId) {
+    const panel = document.createElement('div');
+    panel.className = 'call-panel';
+    panel.id = panelId;
+    panel.setAttribute('role', 'group');
+    panel.setAttribute('aria-label', 'Recording');
+
+    const actions = document.createElement('div');
+    actions.className = 'record-actions';
+    const allowed = RECORD_ACTIONS_FOR_STATE[call.recording];
+    let focusTargetMarked = false;
+    for (const action of RECORD_ACTIONS) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.recordAction = action.value;
+      if (action.icon) {
+        button.append(iconElement(action.icon));
+      } else {
+        const glyph = document.createElement('span');
+        glyph.className = `record-glyph record-glyph-${action.value}`;
+        glyph.setAttribute('aria-hidden', 'true');
+        button.append(glyph);
+      }
+      button.append(action.label);
+      button.disabled = allowed !== undefined && !allowed.includes(action.value);
+      // The first available action is where focus lands when the panel opens (see renderCalls).
+      if (!button.disabled && !focusTargetMarked) {
+        button.classList.add('call-panel-input');
+        button.dataset.callId = call.id;
+        focusTargetMarked = true;
+      }
+      button.addEventListener('click', () => {
+        runAction(callControl.record(call.id, action.value)).catch(() => undefined);
+      });
+      actions.append(button);
+    }
+
+    const hint = document.createElement('p');
+    hint.className = 'panel-hint';
+    hint.textContent = 'Needs the recording right on the PBX.';
+    panel.append(actions, hint);
+    closeOnEscape(panel, call, 'record');
     return panel;
   }
 
@@ -418,7 +569,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       const toolEnabled = {
         dtmf: capabilities.dtmf,
         transfer: capabilities.transfer,
-        attended: capabilities.attendedTransfer && otherCalls.length > 0,
+        record: capabilities.record,
       };
       // A panel whose action is no longer possible (e.g. DTMF after Hold) closes itself.
       if (openTool.has(call.id) && !toolEnabled[openTool.get(call.id)]) {
@@ -439,6 +590,7 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
           </div>
           <div class="call-status">
             <span class="call-state"></span>
+            <span class="call-recording" hidden></span>
             <span class="call-timer"></span>
           </div>
         </div>
@@ -482,6 +634,12 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
       stateElement.textContent = CALL_STATE_LABEL[call.state] ?? call.state;
       stateElement.dataset.state = call.state;
 
+      const recordingElement = row.querySelector('.call-recording');
+      const recordingLabel = RECORDING_LABEL[call.recording];
+      recordingElement.hidden = !recordingLabel;
+      recordingElement.textContent = recordingLabel ?? '';
+      recordingElement.dataset.recording = call.recording ?? '';
+
       const timer = row.querySelector('.call-timer');
       timer.dataset.started = String(callStartedAt.get(call.id));
       timer.textContent = formatDuration(Date.now() - callStartedAt.get(call.id));
@@ -522,8 +680,9 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
         const button = row.querySelector(`[data-tool="${tool.id}"]`);
         button.disabled = !toolEnabled[tool.id];
         button.setAttribute('aria-expanded', String(activeTool === tool.id));
-        if (tool.id === 'attended') {
-          button.title = otherCalls.length > 0 ? 'Attended transfer' : 'Attended transfer needs a second call';
+        if (tool.id === 'record') {
+          // Lets the Record button turn red while the PBX actually records the call (see style.css).
+          button.dataset.recording = call.recording ?? '';
         }
         button.addEventListener('click', () => {
           if (openTool.get(call.id) === tool.id) {
@@ -575,38 +734,51 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     }
   }
 
+  let deviceTargetPicked = false;
+  makeCallDeviceSelect.addEventListener('change', () => {
+    deviceTargetPicked = true;
+  });
+
   function renderMakeCallDeviceOptions() {
     const callableDevices = getCallableDevices();
-    // "(any device)" only means something when there's at least one real
-    // device for the PBX to ring — with none, calling isn't possible at all.
-    const canCall = callableDevices.length > 0;
+    // "(any device)" only means something when there's at least one real device for the PBX to ring. Mobile
+    // (callback) rings the user's mobile number and needs no registered device, so the form stays usable without one.
+    const hasDevices = callableDevices.length > 0;
 
     const previousValue = makeCallDeviceSelect.value;
     makeCallDeviceSelect.replaceChildren();
-    const anyOption = document.createElement('option');
-    anyOption.value = '';
-    anyOption.textContent = canCall ? '(any device)' : 'No devices';
-    makeCallDeviceSelect.appendChild(anyOption);
+    if (hasDevices) {
+      const anyOption = document.createElement('option');
+      anyOption.value = '';
+      anyOption.textContent = '(any device)';
+      makeCallDeviceSelect.appendChild(anyOption);
+    }
+    const mobilityOption = document.createElement('option');
+    mobilityOption.value = MOBILITY_TARGET;
+    mobilityOption.textContent = 'Mobile (callback)';
+    makeCallDeviceSelect.appendChild(mobilityOption);
     for (const device of callableDevices) {
       const option = document.createElement('option');
       option.value = device.uri;
       option.textContent = getDeviceDisplayName(device);
       makeCallDeviceSelect.appendChild(option);
     }
-    if (callableDevices.some((device) => device.uri === previousValue)) {
+    // Only a target the person picked survives a device change; the automatic pick follows the devices, so the
+    // Mobile (callback) fallback shown before any device is known gives way to x-bees once it registers.
+    const keepPick =
+      deviceTargetPicked &&
+      (previousValue === MOBILITY_TARGET ||
+        (previousValue === '' && hasDevices) ||
+        callableDevices.some((device) => device.uri === previousValue));
+    if (keepPick) {
       makeCallDeviceSelect.value = previousValue;
     } else {
-      makeCallDeviceSelect.value = findDefaultDeviceUri();
+      makeCallDeviceSelect.value = hasDevices ? findDefaultDeviceUri() : MOBILITY_TARGET;
     }
-
-    makeCallDestination.disabled = !canCall;
-    makeCallDeviceSelect.disabled = !canCall;
-    makeCallSubmitBtn.disabled = !canCall;
   }
 
-  // Starts the make-call form disabled (devices is still empty at this
-  // point) instead of leaving it enabled with a meaningless "(any device)"
-  // until the first devicesChanged notification arrives.
+  // Fills the device picker before the first devicesChanged notification arrives: with no devices known yet
+  // only Mobile (callback) is offered.
   renderMakeCallDeviceOptions();
   renderDevices();
   renderNoCalls();
@@ -668,7 +840,12 @@ export function createUserSession({ pbxAddress, extension, sipPassword, getWebho
     if (!destination) {
       return;
     }
-    runAction(callControl.makeCall(destination, makeCallDeviceSelect.value || undefined)).catch(() => undefined);
+    const target = makeCallDeviceSelect.value;
+    const placed =
+      target === MOBILITY_TARGET
+        ? callControl.makeMobilityCall(destination)
+        : callControl.makeCall(destination, target || undefined);
+    runAction(placed).catch(() => undefined);
     makeCallDestination.value = '';
   });
 

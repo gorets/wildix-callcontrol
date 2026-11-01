@@ -36,5 +36,9 @@ This is a manual verification tool, not an automated test — it requires a real
   webhook field shows whether events are being forwarded.
 - A card with a live call is outlined. Each call shows its direction, remote party, state and a duration
   timer (counted from when this dashboard first saw the call). Answer / Hold / Resume / Hang up are always
-  visible, disabled when they don't apply; DTMF, Transfer and Attended transfer sit behind their own buttons
-  and open an inline form (Enter sends, Esc closes). "Answer on" appears only while an inbound call rings.
+  visible, disabled when they don't apply; DTMF, Transfer and Record sit behind their own buttons and open an
+  inline panel (Enter sends, Esc closes). Transfer switches between Blind, Conference and Attended (Attended needs a
+  second call). Record offers only the actions the call's recording state allows, and the call shows that state.
+  "Answer on" appears only while an inbound call rings.
+- "New call" can go through Mobile (callback): the PBX rings the user's mobile first, so a user with no device
+  online can still place a call.
