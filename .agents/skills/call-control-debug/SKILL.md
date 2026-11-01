@@ -1,6 +1,6 @@
 ---
 name: call-control-debug
-description: "Debug calls and call-related state on a real Wildix PBX with @gorets/wildix-callcontrol: watch one or several extensions live, see exactly which calls the PBX reports (id, direction, state, remote number, endReason), command calls (answer, hold, resume, hangup, transfer, attended transfer, DTMF) without a phone, dump the raw SIP, and tell a library bug from a PBX or app behaviour. Use it when a call in x-bees / x-hoppers / Collaboration does something unexpected (a transfer that drops, a line that is rejected, a call that will not end, a status that does not change), when a script or E2E needs the PBX's own view of a user's calls, when a SIP WebSocket closes with 1006, when connect() or disconnect() misbehaves, or when working on this library itself."
+description: "Debug calls and call-related state on a real Wildix PBX with @gorets/wildix-callcontrol: watch one or several extensions live, see exactly which calls the PBX reports (id, direction, state, remote number, endReason), command calls (answer, hold, resume, hangup, transfer, conference transfer, attended transfer, DTMF, recording, a mobility call) without a phone, dump the raw SIP, and tell a library bug from a PBX or app behaviour. Use it when a call in x-bees / x-hoppers / Collaboration does something unexpected (a transfer that drops, a line that is rejected, a call that will not end, a status that does not change), when a script or E2E needs the PBX's own view of a user's calls, when a SIP WebSocket closes with 1006, when connect() or disconnect() misbehaves, or when working on this library itself."
 ---
 
 # Debugging calls with call-control
@@ -56,7 +56,18 @@ await cc.disconnect();                                      // bounded; never re
 - A command resolves when the PBX accepts the `PUBLISH` (200), not when the action is done. Wait for the `callUpdate` /
   `callEnd` it causes.
 - `Call`: `id` (the SIP dialog call-id), `direction`, `state` (`ringing`, `answered`, `held`, `ended`), `remoteNumber`,
-  `remoteName`, `tags`, `endReason` (the PBX's raw word, not an enum: seen `rejected`, `cancelled`).
+  `remoteName`, `tags`, `recording` (`off`, `personal`, `system` for a PBX rule, `paused`; from `X-Wildix-record` on both
+  sides of the dialog), `endReason` (the PBX's raw word, not an enum: seen `rejected`, `cancelled`).
+- Commands and their TAPI words: `answer`/`resume` → `talk`, `hold`, `hangup`, `sendDTMF` → `senddigits`, `transfer`,
+  `conferenceTransfer` → `conftransfer`, `attendedTransfer` → `atttransfer` (the far ends of the user's two calls are
+  joined, both of the user's legs end; seen live), `record(id, 'on' | 'off' | 'pause' | 'unpause')`, `makeCall` /
+  `makeMobilityCall` → `originate` (`device`, `any`, `mobility`).
+- Seen live: `record` moves `recording` `off` → `personal` → `paused` → `personal` → `off`; `on` on a recorded call is
+  rejected `500 ... recording already started`, `off` on a stopped one `500 ... recording already stopped` (read
+  `recording` first). `conferenceTransfer`: the user and the far end report the destination as their remote number at
+  once, the destination rings twice (one invitation per leg; answering one ends the other as `rejected`), all three
+  talk, and after the user hangs up the other two stay connected (the destination still shows the user's number).
+  `makeMobilityCall` is not checked: it rings the mobile number in the user's PBX settings.
 - `makeCall` is click-to-dial: it rings the user's own devices first and dials the destination only when a real device
   answers that leg. This library never answers, so with no phone to answer it nothing is dialed. To start a call in a
   test, use a browser or a phone; use the observer for everything after the ring.

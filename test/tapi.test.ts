@@ -90,4 +90,24 @@ describe('buildTapiExtraHeaders', () => {
       'Expires: 1',
     ]);
   });
+
+  test('record: callId + action', () => {
+    expect(buildTapiExtraHeaders('record', 'call-1', 'pause')).toEqual([
+      'W-TapiCommand: record',
+      'W-TapiParam1: call-1',
+      'W-TapiParam2: pause',
+      'Event: wildixtsp/action',
+      'Expires: 1',
+    ]);
+  });
+
+  test('conftransfer: callId + destination', () => {
+    expect(buildTapiExtraHeaders('conftransfer', 'call-1', '203')).toEqual([
+      'W-TapiCommand: conftransfer',
+      'W-TapiParam1: call-1',
+      'W-TapiParam2: 203',
+      'Event: wildixtsp/action',
+      'Expires: 1',
+    ]);
+  });
 });

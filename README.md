@@ -48,7 +48,8 @@ awareness and the ability to answer/hold/transfer/hang up calls without owning t
 ## Features
 
 - 📞 Real-time call lifecycle events (`callStart`, `callUpdate`, `callEnd`) sourced from SIP `dialog` NOTIFYs
-- 🎛️ Call control commands: `makeCall`, `answer`, `hangup`, `hold`, `resume`, `sendDTMF`, `transfer`, `attendedTransfer`
+- 🎛️ Call control commands: `makeCall`, `makeMobilityCall`, `answer`, `hangup`, `hold`, `resume`, `sendDTMF`, `transfer`,
+  `conferenceTransfer`, `attendedTransfer`, `record`
 - 📱 Registered-device visibility (`devicesChanged` / `getDevices()`) — know which of the user's devices (desk
   phone, mobile, web) are online
 - 🟢 Read-only presence (`presenceChanged` / `getPresence()`) and inbound-routing mode (`activeDeviceChanged` /
@@ -162,13 +163,21 @@ logger: (level, category, label, content) => {
 | Method | TAPI command | Description |
 |---|---|---|
 | `makeCall(destination: string, deviceUri?: string)` | `originate` | Places an outbound call: rings the given device (or, by default, any of the user's own registered devices — a "ring-back" leg), then bridges to `destination` once that ring-back is answered |
+| `makeMobilityCall(destination: string)` | `originate` | Wildix mobility: the PBX rings the user's mobile number first and, once it answers, dials `destination` |
 | `answer(callId: string, deviceUri?: string)` | `talk` | Answers a ringing call, optionally on a specific device from `getDevices()` |
 | `resume(callId: string)` | `talk` | Un-holds a held call |
 | `hangup(callId: string)` | `hangup` | Ends a call |
 | `hold(callId: string)` | `hold` | Puts a call on hold |
 | `sendDTMF(callId: string, digits: string)` | `senddigits` | Sends DTMF tones |
 | `transfer(callId: string, destination: string)` | `transfer` | Cold (blind) transfer |
-| `attendedTransfer(callId1: string, callId2: string)` | `atttransfer` | Warm transfer between two of the user's own calls |
+| `conferenceTransfer(callId: string, destination: string)` | `conftransfer` | Transfer through a conference: the PBX joins the user and the far end in a conference and calls `destination` (it rings with one invitation per leg; answering one ends the other as `rejected`). All three talk; when the user hangs up, the far end and `destination` stay connected (seen live) |
+| `attendedTransfer(callId1: string, callId2: string)` | `atttransfer` | Warm transfer between two of the user's own calls: their far ends are joined and both of the user's legs end |
+| `record(callId: string, action: RecordAction)` | `record` | `'on'` starts, `'off'` stops, `'pause'` / `'unpause'` pause and resume the recording of a call; any other action rejects without sending. Needs the user's right to record. `Call.recording` tells the current state: on a call already recorded (`personal` or `system`) the PBX rejects `'on'` with `500 ... recording already started`, and `'off'` on a call not recorded with `500 ... recording already stopped` (seen live) |
+
+`conferenceTransfer` and every `record` action were checked against a real Wildix PBX with this library: `recording`
+goes `off` → `personal` (`on`) → `paused` (`pause`) → `personal` (`unpause`) → `off` (`off`). A `system` recording was
+not met. `makeMobilityCall` follows what Wildix clients send and has not yet been checked: it calls the user's mobile
+number from the PBX settings, so try it only where that number is yours.
 
 Every command method resolves once the PBX accepts the underlying `PUBLISH` (200 OK) — that confirms the
 command was accepted, not that the action fully completed. Watch for the resulting `callUpdate` / `callEnd`
@@ -215,6 +224,7 @@ interface Call {
   remoteNumber?: string;
   remoteName?: string;
   tags?: string[];
+  recording?: 'off' | 'personal' | 'system' | 'paused'; // X-Wildix-record; unset when the PBX does not report it
   endReason?: string;                      // set once state is 'ended' — raw PBX reason, e.g. "cancelled"; not a fixed enum
 }
 
@@ -230,6 +240,9 @@ interface Presence {
   message?: string;
   until?: string;
 }
+
+type RecordAction = 'on' | 'off' | 'pause' | 'unpause';
+type RecordingState = 'off' | 'personal' | 'system' | 'paused';
 
 interface ActiveDevice {
   type: 'device' | 'any_device' | 'mobility' | 'unknown';

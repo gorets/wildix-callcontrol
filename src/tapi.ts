@@ -1,6 +1,15 @@
 import { TAPI_EVENT_PACKAGE, TAPI_PUBLISH_EXPIRES_SECONDS } from './constants';
 
-export type TapiCommand = 'originate' | 'talk' | 'hangup' | 'hold' | 'senddigits' | 'transfer' | 'atttransfer';
+export type TapiCommand =
+  | 'originate'
+  | 'talk'
+  | 'hangup'
+  | 'hold'
+  | 'senddigits'
+  | 'transfer'
+  | 'conftransfer'
+  | 'atttransfer'
+  | 'record';
 
 export function buildTapiExtraHeaders(
   command: TapiCommand,

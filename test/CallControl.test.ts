@@ -630,6 +630,65 @@ describe('CallControl commands', () => {
     ]);
   });
 
+  test('makeMobilityCall sends an originate PUBLISH with "mobility" as param2: the PBX rings the mobile first', async () => {
+    const callControl = await connectedCallControl();
+    const promise = callControl.makeMobilityCall('+31612345678');
+    resolveLastPublish();
+    await promise;
+
+    expect((Publisher as any).instances[0].options.extraHeaders).toEqual([
+      'W-TapiCommand: originate',
+      'W-TapiParam1: +31612345678',
+      'W-TapiParam2: mobility',
+      'Event: wildixtsp/action',
+      'Expires: 1',
+    ]);
+  });
+
+  test('conferenceTransfer sends a conftransfer PUBLISH with callId and destination', async () => {
+    const callControl = await connectedCallControl();
+    const promise = callControl.conferenceTransfer('call-1', '203');
+    resolveLastPublish();
+    await promise;
+
+    expect((Publisher as any).instances[0].options.extraHeaders).toEqual([
+      'W-TapiCommand: conftransfer',
+      'W-TapiParam1: call-1',
+      'W-TapiParam2: 203',
+      'Event: wildixtsp/action',
+      'Expires: 1',
+    ]);
+  });
+
+  test.each([
+    'on',
+    'off',
+    'pause',
+    'unpause',
+  ] as const)('record sends a record PUBLISH with callId and "%s"', async (action) => {
+    const callControl = await connectedCallControl();
+    const promise = callControl.record('call-1', action);
+    resolveLastPublish();
+    await promise;
+
+    expect((Publisher as any).instances[0].options.extraHeaders).toEqual([
+      'W-TapiCommand: record',
+      'W-TapiParam1: call-1',
+      `W-TapiParam2: ${action}`,
+      'Event: wildixtsp/action',
+      'Expires: 1',
+    ]);
+  });
+
+  test('record rejects an unknown action without sending anything', async () => {
+    const callControl = await connectedCallControl();
+
+    await expect(callControl.record('call-1', 'start' as never)).rejects.toThrow(
+      'CallControl: record action must be one of on, off, pause, unpause',
+    );
+    expect((Publisher as any).instances).toHaveLength(0);
+  });
+
   test('a command rejects when the PBX rejects the PUBLISH', async () => {
     const callControl = await connectedCallControl();
     const promise = callControl.hangup('call-1');

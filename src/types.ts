@@ -2,6 +2,14 @@ import type { LogConnector, LogLevel, Web } from 'sip.js';
 
 export type CallDirection = 'inbound' | 'outbound';
 export type CallState = 'ringing' | 'answered' | 'held' | 'ended';
+/** What `record()` does to the recording of a call: start, stop, pause or resume it. */
+export type RecordAction = 'on' | 'off' | 'pause' | 'unpause';
+/**
+ * How the PBX records a call (`X-Wildix-record`): `personal` started by the user (`record(id, 'on')`), `system` by a
+ * PBX rule, `paused`, or `off`. A call already recorded rejects `record(id, 'on')` with `500 ... recording already
+ * started`.
+ */
+export type RecordingState = 'off' | 'personal' | 'system' | 'paused';
 
 export interface Call {
   id: string;
@@ -10,6 +18,8 @@ export interface Call {
   remoteNumber?: string;
   remoteName?: string;
   tags?: string[];
+  /** Unset when the PBX does not report recording. */
+  recording?: RecordingState;
   /**
    * Raw, PBX-supplied reason the call ended (only set once `state` is
    * `'ended'`) — e.g. `"cancelled"`. Not a fixed enum: only that one value is

@@ -25,6 +25,7 @@ function toCall(parsed: ParsedDialog): Call {
     remoteNumber: parsed.remoteNumber,
     remoteName: parsed.remoteName,
     tags: parsed.tags,
+    recording: parsed.recording,
     endReason: parsed.rawStateReason,
   };
 }
@@ -34,6 +35,7 @@ function callsEqual(a: Call, b: Call): boolean {
     a.state === b.state &&
     a.remoteNumber === b.remoteNumber &&
     a.remoteName === b.remoteName &&
+    a.recording === b.recording &&
     JSON.stringify(a.tags ?? []) === JSON.stringify(b.tags ?? [])
   );
 }

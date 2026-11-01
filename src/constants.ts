@@ -22,6 +22,7 @@ export const WILDIX_PARAMS = {
   STATE: 'X-Wildix-state',
   CUSTOM: 'X-Wildix-custom',
   TAGS: 'X-Wildix-tags',
+  RECORD: 'X-Wildix-record',
 } as const;
 
 export const SYSTEM_USER_AGENT_MARKERS = ['wildixgw', 'wildix tapi'];

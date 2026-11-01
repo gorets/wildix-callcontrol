@@ -88,6 +88,7 @@ describe('parseDialogInfoXml', () => {
         remoteName: 'Vladimir',
         remoteNumber: '+380501122334',
         tags: undefined,
+        recording: 'system',
       },
     ]);
   });
@@ -139,5 +140,38 @@ describe('parseDialogInfoXml', () => {
 
     expect(result.dialogs).toEqual([]);
     expect(result.presence).toEqual({ status: 'online', message: '', until: '' });
+  });
+
+  describe('recording (X-Wildix-record: <remote> is the user, <local> the other party)', () => {
+    const recordParam = (value?: string) => (value ? `<param pname="X-Wildix-record" pval="${value}"/>` : '');
+    const dialogWithRecord = (user?: string, other?: string) => `<?xml version="1.0"?>
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="1" state="full" entity="sip:10090@your-pbx.wildixin.com">
+  <dialog id="call-r" call-id="call-r" direction="recipient">
+    <remote><identity>sip:10090@wildix</identity><target uri="sip:10090@wildix">${recordParam(user)}</target></remote>
+    <local><identity>sip:203@wildix</identity><target uri="sip:203@wildix">${recordParam(other)}</target></local>
+    <state>confirmed</state>
+  </dialog>
+</dialog-info>`;
+    const recordingOf = (user?: string, other?: string) =>
+      parseDialogInfoXml(dialogWithRecord(user, other)).dialogs[0].recording;
+
+    test.each([
+      ['off', undefined, 'off'],
+      ['personal', undefined, 'personal'],
+      ['off', 'system', 'system'],
+      ['system', undefined, 'system'],
+      ['paused', 'system', 'paused'],
+      ['personal', 'paused', 'paused'],
+    ])('user %s, other party %s -> %s', (user, other, expected) => {
+      expect(recordingOf(user, other)).toBe(expected);
+    });
+
+    test('is undefined when the PBX reports no recording at all', () => {
+      expect(recordingOf(undefined, undefined)).toBeUndefined();
+    });
+
+    test('an unknown value is not taken for a recording state', () => {
+      expect(recordingOf('maybe', undefined)).toBeUndefined();
+    });
   });
 });

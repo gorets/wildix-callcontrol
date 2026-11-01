@@ -27,7 +27,7 @@ import { CallStateTracker } from './state/callState';
 import { DeviceStateTracker } from './state/deviceState';
 import { PresenceStateTracker } from './state/presenceState';
 import { buildTapiExtraHeaders, type TapiCommand } from './tapi';
-import type { ActiveDevice, Call, CallControlConfig, Device, Presence } from './types';
+import type { ActiveDevice, Call, CallControlConfig, Device, Presence, RecordAction } from './types';
 import { parseActiveDeviceXml } from './xml/activeDeviceParser';
 import { parseDialogInfoXml } from './xml/dialogInfoParser';
 import { parseRegistrationInfoXml } from './xml/registrationInfoParser';
@@ -52,6 +52,8 @@ class TapiPublisher extends Publisher {
     return this.send();
   }
 }
+
+const RECORD_ACTIONS: readonly RecordAction[] = ['on', 'off', 'pause', 'unpause'];
 
 export class CallControl extends EventEmitter {
   private readonly config: CallControlConfig;
@@ -208,6 +210,11 @@ export class CallControl extends EventEmitter {
     }
   }
 
+  /** Calls the user's mobile first (Wildix mobility) and, once it answers, the destination. */
+  async makeMobilityCall(destination: string): Promise<void> {
+    await this.sendTapiCommand('originate', destination, 'mobility');
+  }
+
   async answer(callId: string, deviceUri?: string): Promise<void> {
     await this.sendTapiCommand('talk', callId, deviceUri);
   }
@@ -230,6 +237,17 @@ export class CallControl extends EventEmitter {
 
   async transfer(callId: string, destination: string): Promise<void> {
     await this.sendTapiCommand('transfer', callId, destination);
+  }
+
+  async conferenceTransfer(callId: string, destination: string): Promise<void> {
+    await this.sendTapiCommand('conftransfer', callId, destination);
+  }
+
+  async record(callId: string, action: RecordAction): Promise<void> {
+    if (!RECORD_ACTIONS.includes(action)) {
+      throw new Error(`CallControl: record action must be one of ${RECORD_ACTIONS.join(', ')}`);
+    }
+    await this.sendTapiCommand('record', callId, action);
   }
 
   async attendedTransfer(callId1: string, callId2: string): Promise<void> {

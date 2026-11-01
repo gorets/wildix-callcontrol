@@ -9,4 +9,6 @@ export type {
   CallState,
   Device,
   Presence,
+  RecordAction,
+  RecordingState,
 } from './types';

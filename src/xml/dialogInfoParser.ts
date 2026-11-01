@@ -2,7 +2,7 @@ import type { Element } from 'ltx';
 import { parse } from 'ltx';
 
 import { WILDIX_PARAMS } from '../constants';
-import type { CallDirection } from '../types';
+import type { CallDirection, RecordingState } from '../types';
 
 export interface ParsedDialog {
   id: string;
@@ -13,6 +13,7 @@ export interface ParsedDialog {
   remoteName?: string;
   remoteNumber?: string;
   tags?: string[];
+  recording?: RecordingState;
 }
 
 export interface ParsedPresence {
@@ -66,6 +67,9 @@ export function parseDialogInfoXml(xmlBody: string): ParsedDialogInfo {
     const rawStateReason = stateEl?.attrs.reason as string | undefined;
     const hold = dialogEl.getChild('note')?.getText() === 'On hold';
 
+    const otherParams = dialogEl.getChild('local')?.getChild('target')?.getChildren('param') ?? [];
+    const recording = toRecordingState(readRecordParam(targetParams), readRecordParam(otherParams));
+
     let remoteName: string | undefined;
     let remoteNumber: string | undefined;
     const identityEl = dialogEl.getChild('local')?.getChild('identity');
@@ -75,10 +79,32 @@ export function parseDialogInfoXml(xmlBody: string): ParsedDialogInfo {
       remoteNumber = uri ? (uri.startsWith('sip:') ? uri.slice(4).split('@')[0] : uri) : undefined;
     }
 
-    dialogs.push({ id, direction, rawState, rawStateReason, hold, remoteName, remoteNumber, tags });
+    dialogs.push({ id, direction, rawState, rawStateReason, hold, remoteName, remoteNumber, tags, recording });
   }
 
   return { dialogs, presence };
+}
+
+const RECORDING_STATES: readonly string[] = ['off', 'personal', 'system', 'paused'];
+
+function readRecordParam(paramEls: Element[]): RecordingState | undefined {
+  const value = paramEls.find((paramEl) => paramEl.attrs.pname === WILDIX_PARAMS.RECORD)?.attrs.pval;
+  return typeof value === 'string' && RECORDING_STATES.includes(value) ? (value as RecordingState) : undefined;
+}
+
+/**
+ * Wildix reports recording on both sides of a dialog: `<remote>` is the user, `<local>` the other party (a trunk
+ * recorded by a PBX rule shows `system` there). A pause on either side wins, then a system recording; Wildix clients
+ * (rnc `getSipDialogsFromXml`) read it the same way.
+ */
+function toRecordingState(user?: RecordingState, other?: RecordingState): RecordingState | undefined {
+  if (user === 'paused' || other === 'paused') {
+    return 'paused';
+  }
+  if (user === 'system' || other === 'system') {
+    return 'system';
+  }
+  return user;
 }
 
 function applyPresenceParams(paramEls: Element[], presence: ParsedPresence | null): ParsedPresence | null {

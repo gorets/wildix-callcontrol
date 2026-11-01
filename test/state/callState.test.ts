@@ -53,6 +53,16 @@ describe('CallStateTracker', () => {
     ]);
   });
 
+  test('the recording state is copied to the Call, and a change of it alone produces an updated Call', () => {
+    const tracker = new CallStateTracker();
+    tracker.apply([ringingDialog({ rawState: 'confirmed', recording: 'off' })]);
+
+    const diff = tracker.apply([ringingDialog({ rawState: 'confirmed', recording: 'personal' })]);
+
+    expect(diff.updated).toEqual([expect.objectContaining({ id: 'call-1', recording: 'personal' })]);
+    expect(tracker.getActiveCalls()[0].recording).toBe('personal');
+  });
+
   test('the note "On hold" maps a confirmed dialog to the held state', () => {
     const tracker = new CallStateTracker();
     tracker.apply([ringingDialog({ rawState: 'confirmed' })]);
