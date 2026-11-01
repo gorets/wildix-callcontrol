@@ -7,8 +7,8 @@ function ringingDialog(overrides: Partial<ParsedDialog> = {}): ParsedDialog {
     direction: 'inbound',
     rawState: 'early',
     hold: false,
-    remoteName: 'Vladimir',
-    remoteNumber: '+380501122334',
+    remoteName: 'Jane Doe',
+    remoteNumber: '+15555550123',
     tags: undefined,
     ...overrides,
   };
@@ -24,8 +24,8 @@ describe('CallStateTracker', () => {
         id: 'call-1',
         direction: 'inbound',
         state: 'ringing',
-        remoteNumber: '+380501122334',
-        remoteName: 'Vladimir',
+        remoteNumber: '+15555550123',
+        remoteName: 'Jane Doe',
         tags: undefined,
       },
     ]);
@@ -46,8 +46,8 @@ describe('CallStateTracker', () => {
         id: 'call-1',
         direction: 'inbound',
         state: 'answered',
-        remoteNumber: '+380501122334',
-        remoteName: 'Vladimir',
+        remoteNumber: '+15555550123',
+        remoteName: 'Jane Doe',
         tags: undefined,
       },
     ]);
@@ -88,7 +88,7 @@ describe('CallStateTracker', () => {
 
     // Real Wildix NOTIFYs strip display name / sip: scheme on the terminated payload.
     const diff = tracker.apply([
-      ringingDialog({ rawState: 'terminated', remoteName: undefined, remoteNumber: '380501122334' }),
+      ringingDialog({ rawState: 'terminated', remoteName: undefined, remoteNumber: '15555550123' }),
     ]);
 
     expect(diff.ended).toEqual([
@@ -96,8 +96,8 @@ describe('CallStateTracker', () => {
         id: 'call-1',
         direction: 'inbound',
         state: 'ended',
-        remoteNumber: '+380501122334',
-        remoteName: 'Vladimir',
+        remoteNumber: '+15555550123',
+        remoteName: 'Jane Doe',
         tags: undefined,
       },
     ]);
@@ -125,8 +125,8 @@ describe('CallStateTracker', () => {
         id: 'call-1',
         direction: 'inbound',
         state: 'ended',
-        remoteNumber: '+380501122334',
-        remoteName: 'Vladimir',
+        remoteNumber: '+15555550123',
+        remoteName: 'Jane Doe',
         tags: undefined,
       },
     ]);

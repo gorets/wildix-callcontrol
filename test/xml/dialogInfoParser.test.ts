@@ -1,8 +1,8 @@
 import { parseDialogInfoXml } from '../../src/xml/dialogInfoParser';
 
 const RINGING_DIALOG_XML = `<?xml version="1.0"?>
-<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="3" state="full" entity="sip:10090@v-gorobets-cloud.wildixin.com">
-  <dialog id="5c7fc34b345454777551139f6671c782" call-id="5c7fc34b345454777551139f6671c782" local-tag="as43ed18e9" remote-tag="0tu343i69f" remote-uri="sip:10090@127.0.0.1" local-uri="sip:+380501122334@127.0.0.1:6050" direction="recipient">
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="3" state="full" entity="sip:10090@your-pbx.wildixin.com">
+  <dialog id="5c7fc34b345454777551139f6671c782" call-id="5c7fc34b345454777551139f6671c782" local-tag="as43ed18e9" remote-tag="0tu343i69f" remote-uri="sip:10090@127.0.0.1" local-uri="sip:+15555550123@127.0.0.1:6050" direction="recipient">
     <note>Ringing</note>
     <remote>
       <identity display="user10090">sip:10090@wildix</identity>
@@ -15,8 +15,8 @@ const RINGING_DIALOG_XML = `<?xml version="1.0"?>
       </target>
     </remote>
     <local>
-      <identity display="Vladimir">sip:+380501122334@wildix</identity>
-      <target uri="sip:+380501122334@wildix">
+      <identity display="Jane Doe">sip:+15555550123@wildix</identity>
+      <target uri="sip:+15555550123@wildix">
         <param pname="X-Wildix-type" pval="trunk"/>
         <param pname="X-Wildix-record" pval="system"/>
       </target>
@@ -26,8 +26,8 @@ const RINGING_DIALOG_XML = `<?xml version="1.0"?>
 </dialog-info>`;
 
 const TERMINATED_DIALOG_XML = `<?xml version="1.0"?>
-<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="4" state="full" entity="sip:10090@v-gorobets-cloud.wildixin.com">
-  <dialog id="5c7fc34b345454777551139f6671c782" call-id="5c7fc34b345454777551139f6671c782" local-tag="as43ed18e9" remote-tag="0tu343i69f" remote-uri="sip:10090@127.0.0.1" local-uri="sip:+380501122334@127.0.0.1:6050" direction="recipient">
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="4" state="full" entity="sip:10090@your-pbx.wildixin.com">
+  <dialog id="5c7fc34b345454777551139f6671c782" call-id="5c7fc34b345454777551139f6671c782" local-tag="as43ed18e9" remote-tag="0tu343i69f" remote-uri="sip:10090@127.0.0.1" local-uri="sip:+15555550123@127.0.0.1:6050" direction="recipient">
     <note>Ready</note>
     <remote>
       <identity>10090</identity>
@@ -38,8 +38,8 @@ const TERMINATED_DIALOG_XML = `<?xml version="1.0"?>
       </target>
     </remote>
     <local>
-      <identity>+380501122334</identity>
-      <target uri="+380501122334">
+      <identity>+15555550123</identity>
+      <target uri="+15555550123">
         <param pname="X-Wildix-type" pval="service"/>
       </target>
     </local>
@@ -48,14 +48,14 @@ const TERMINATED_DIALOG_XML = `<?xml version="1.0"?>
 </dialog-info>`;
 
 const EMPTY_DIALOG_INFO_XML = `<?xml version="1.0"?>
-<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="5" state="full" entity="sip:10090@v-gorobets-cloud.wildixin.com"></dialog-info>`;
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="5" state="full" entity="sip:10090@your-pbx.wildixin.com"></dialog-info>`;
 
-// Captured live from a real Wildix PBX (v-gorobets-cloud.wildixin.com) during
+// Captured live from a real Wildix PBX (host, names and numbers replaced) during
 // manual verification: a presence-only pseudo-dialog with no call-id (only a
 // plain "id" holding the extension number) and its presence <param>s as
 // direct children of <dialog>, not nested under <remote><target>.
 const PRESENCE_ONLY_PSEUDO_DIALOG_XML = `<?xml version="1.0"?>
-<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="1" state="full" entity="sip:10090@v-gorobets-cloud.wildixin.com">
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="1" state="full" entity="sip:10090@your-pbx.wildixin.com">
   <dialog id="10090">
 <state>terminated</state>
 <param pname="X-Wildix-state" pval="Online"/>
@@ -64,7 +64,7 @@ const PRESENCE_ONLY_PSEUDO_DIALOG_XML = `<?xml version="1.0"?>
 </dialog-info>`;
 
 const OUTBOUND_HELD_DIALOG_XML = `<?xml version="1.0"?>
-<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="1" state="full" entity="sip:10090@v-gorobets-cloud.wildixin.com">
+<dialog-info xmlns="urn:ietf:params:xml:ns:dialog-info" version="1" state="full" entity="sip:10090@your-pbx.wildixin.com">
   <dialog call-id="call-held-1" direction="initiator">
     <note>On hold</note>
     <local><identity display="Jane Roe">sip:79001112233@wildix</identity></local>
@@ -85,8 +85,8 @@ describe('parseDialogInfoXml', () => {
         direction: 'inbound',
         rawState: 'early',
         hold: false,
-        remoteName: 'Vladimir',
-        remoteNumber: '+380501122334',
+        remoteName: 'Jane Doe',
+        remoteNumber: '+15555550123',
         tags: undefined,
         recording: 'system',
       },
@@ -108,7 +108,7 @@ describe('parseDialogInfoXml', () => {
         rawStateReason: 'cancelled',
         hold: false,
         remoteName: undefined,
-        remoteNumber: '+380501122334',
+        remoteNumber: '+15555550123',
         tags: undefined,
       },
     ]);
