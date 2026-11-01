@@ -66,6 +66,8 @@ npm install @gorets/wildix-callcontrol sip.js
 
 `sip.js@^0.21.2` is a peer dependency — you control which version you bundle.
 
+Node.js 24 or newer is required to run it in Node (`engines`); in a browser it needs nothing but a module-capable page.
+
 ## Quick start
 
 ```ts
@@ -281,9 +283,6 @@ await Promise.all(users.map((cc) => cc.connect()));
 - **Reconnection** — on transport or registration loss, the library re-registers and recreates all
   subscriptions automatically, with backoff between attempts.
 
-See [`docs/superpowers/specs/2026-07-03-callcontrol-sip-eventemitter-design.md`](docs/superpowers/specs/2026-07-03-callcontrol-sip-eventemitter-design.md)
-for the full design rationale, wire-format details, and known open questions.
-
 ## Non-goals
 
 - No WebRTC/media handling of any kind, and no `mute` (meaningless without a local media session)
@@ -310,9 +309,10 @@ individual READMEs for setup.
 
 ### Releasing
 
-Publishing to npm is automated: bump `version` in `package.json`, then create a GitHub Release (tag it
-`vX.Y.Z`) — [`.github/workflows/npm-publish.yml`](.github/workflows/npm-publish.yml) runs typecheck/test/lint,
-builds, and publishes to npm on every published release. Requires an `NPM_TOKEN` repo secret (an npm
+Publishing is automated: a push to `main` that raises `version` in `package.json` releases that version. Bump it with
+`npm version <x.y.z> --no-git-tag-version`, commit and push; [`.github/workflows/npm-publish.yml`](.github/workflows/npm-publish.yml)
+runs typecheck, test and lint, builds, publishes to npm with provenance, then tags `vX.Y.Z` and creates the GitHub
+Release. A push that does not change the version releases nothing. Requires an `NPM_TOKEN` repo secret (an npm
 automation token with publish access to `@gorets/wildix-callcontrol`).
 
 The [`examples/dashboard`](examples/dashboard) demo deploys to GitHub Pages automatically on every push to
