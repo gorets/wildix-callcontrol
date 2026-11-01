@@ -63,8 +63,8 @@ npm version <x.y.z> --no-git-tag-version
 git commit -am "<x.y.z>" && git push
 ```
 
-**Agents never push, tag, publish or release without the user asking for exactly that**, each time. The README's
-"Releasing" section still describes the older GitHub-Release flow; the workflow file is the truth.
+**Agents never push, tag, publish or release without the user asking for exactly that**, each time. The workflow file
+is the truth when it and the README's "Releasing" section disagree.
 
 ## Non-goals
 
